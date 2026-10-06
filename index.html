@@ -1,0 +1,1327 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Meu PDV</title>
+<meta name="theme-color" content="#6b2fc9">
+<meta name="description" content="Frente de caixa, estoque e variações de produto com leitura de QR Code pelo SKU.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Meu PDV">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: app de coluna única (até 480px). Cinco abas (Caixa, Produtos, Estoque, Vendas, Mais), barra do carrinho fixa acima delas e leitor de QR em tela cheia. Interface grafite e papel; a cor aparece só para avisar (estoque baixo, sem estoque). */
+:root {
+  color-scheme: light; padding-top: env(safe-area-inset-top, 0px);
+  --bg: #ffffff; --surface: #ffffff; --ink: #0b0b0b; --ink2: #3d3a46; --muted: #6a6575;
+  --grid: #ece9f2; --axis: #cfc9dc; --line: rgba(11,11,11,.12); --danger: #b32f2f; --okc: #006300;
+  --warn: #fab219; --crit: #d03b3b;
+  --brand: #6b2fc9; --brand-ink: #ffffff; --brand-soft: #f1eafc; --teal: #0e9f96; --teal-soft: #e3f6f4; --accent: #0e9f96;
+  --display: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.4; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.wrap { max-width: 480px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 190px; }
+
+.brand { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.brand h1 { font-family: var(--display); font-weight: 700; font-size: 20px; margin: 0; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.note { font-size: 12px; color: var(--muted); }
+.tabtitle { font-family: var(--display); font-weight: 600; font-size: 22px; margin: 16px 0 4px; }
+.pbar { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--axis); background: none; border-radius: 999px; padding: 6px 14px; font-weight: 500; color: var(--ink2); }
+.chip[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 3px; }
+.sheet .seg { margin-bottom: 14px; }
+.seg button { border: 0; background: none; border-radius: 9px; padding: 9px 6px; font-weight: 600; color: var(--ink2); min-width: 0; }
+.seg button[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
+svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+select, textarea, input[type=text], input[type=date], input[type=number], input[type=search], input:not([type]) { font: inherit; font-size: 16px; color: var(--ink); background: var(--bg); border: 1px solid var(--axis); border-radius: 10px; padding: 11px 12px; width: 100%; min-width: 0; }
+textarea { min-height: 100px; resize: vertical; }
+.btn { border: 1px solid var(--axis); background: var(--surface); border-radius: 12px; padding: 11px 16px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-sm { padding: 7px 12px; font-size: 13px; border-radius: 10px; white-space: nowrap; }
+.btn-big { padding: 16px; font-size: 17px; width: 100%; }
+.btn-primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.btn-danger { color: var(--danger); border-color: var(--danger); background: none; }
+.btn[disabled] { opacity: .5; }
+.btnrow { display: flex; flex-direction: column; gap: 8px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.linkbtn { background: none; border: 0; padding: 8px 0 0; color: var(--ink2); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-top: 14px; }
+.card h2 { font-family: var(--display); font-weight: 600; font-size: 17px; margin: 0 0 2px; }
+.card .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+.foot { color: var(--muted); font-size: 13px; margin: 10px 0 0; overflow-wrap: anywhere; }
+.sect { font-family: var(--display); font-weight: 600; font-size: 15px; margin: 18px 2px 8px; color: var(--ink2); }
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.kpis .k { display: block; color: var(--ink2); font-size: 13px; }
+.kpis .kv { font-family: var(--display); font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kpis.big .kv { font-size: 30px; }
+
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 0 14px; margin-top: 12px; }
+.row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--grid); padding: 12px 0; min-width: 0; }
+.row:first-child { border-top: 0; }
+.mid { flex: 1; min-width: 0; }
+.t1 { font-weight: 600; overflow-wrap: anywhere; }
+.t2 { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.amt { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; text-align: right; }
+.amt small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; }
+.chev { color: var(--muted); }
+.ghead { font-size: 13px; font-weight: 600; color: var(--ink2); padding: 12px 0 0; border-top: 1px solid var(--grid); }
+.ghead:first-child { border-top: 0; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--grid); color: var(--ink); white-space: nowrap; }
+.pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.pill.warn::before { background: var(--warn); }
+.pill.crit::before { background: var(--crit); }
+.pill.ok::before { background: var(--okc); }
+.warnt { color: var(--danger); font-weight: 600; }
+.empty { text-align: center; padding: 26px 8px; color: var(--ink2); }
+.empty h2 { font-family: var(--display); font-size: 20px; color: var(--ink); margin: 0 0 6px; }
+.empty p { margin: 0 0 14px; }
+.empty .btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--axis); border-radius: 10px; overflow: hidden; flex: none; }
+.stepper button { width: 38px; height: 38px; border: 0; background: var(--surface); font-size: 20px; line-height: 1; }
+.stepper button:disabled { opacity: .35; }
+.stepper span { min-width: 34px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cline { padding: 12px 0; border-top: 1px solid var(--grid); }
+.cline:first-child { border-top: 0; }
+.cline .ctl { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.cline .ctl .x { color: var(--muted); }
+.cline .ctl input { width: 96px; padding: 8px 10px; font-size: 15px; text-align: right; font-variant-numeric: tabular-nums; }
+.cline .ctl .lt { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+.totline { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; margin: 4px 0; }
+.totline.grand { font-family: var(--display); font-size: 24px; font-weight: 700; margin-top: 8px; }
+
+#cartbar { position: fixed; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; bottom: calc(62px + env(safe-area-inset-bottom, 0px)); padding: 0 16px 8px; z-index: 10; pointer-events: none; }
+#cartbar .cb { pointer-events: auto; width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--brand); color: #fff; border: 0; border-radius: 16px; padding: 14px 18px; box-shadow: 0 6px 18px rgba(0,0,0,.25); font-weight: 500; }
+#cartbar .cbv { font-weight: 700; font-variant-numeric: tabular-nums; }
+#nav { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; width: 100%; max-width: 480px; z-index: 11; display: flex; background: var(--surface); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px)); }
+#nav button { flex: 1; background: none; border: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; font-size: 11.5px; font-weight: 500; color: var(--muted); border-radius: 10px; min-width: 0; }
+#nav button[aria-current="page"] { color: var(--brand); font-weight: 600; }
+#nav button[aria-current="page"] svg { color: var(--teal); }
+
+#sheet:empty { display: none; }
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; }
+.sheet { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; width: 100%; max-width: 480px; max-height: 92%; overflow: auto; background: var(--surface); border-radius: 20px 20px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 21; }
+.sheet h2 { font-family: var(--display); font-size: 19px; margin: 0 0 4px; overflow-wrap: anywhere; }
+.sheet .ctxtag { color: var(--muted); font-size: 13px; margin-bottom: 14px; overflow-wrap: anywhere; }
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.field label { font-size: 13px; font-weight: 600; color: var(--ink2); }
+.field .tip { font-size: 12px; color: var(--muted); }
+.inrow { display: flex; gap: 8px; }
+.inrow input { flex: 1; }
+.money-in { position: relative; }
+.money-in span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.money-in input { padding-left: 40px; }
+.actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.chk { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 14px; }
+.chk input { width: 20px; height: 20px; flex: none; }
+#toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(140px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 60; max-width: calc(100% - 32px); text-align: center; }
+
+.evo { display: flex; gap: 4px; height: 130px; border-bottom: 1px solid var(--axis); }
+.evo .col { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+.evo .v { font-size: 10.5px; margin-bottom: 3px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.evo .b { width: 100%; max-width: 22px; border-radius: 4px 4px 0 0; background: var(--accent); min-height: 2px; }
+.evol { display: flex; gap: 4px; margin-top: 6px; }
+.evol span { flex: 1; text-align: center; font-size: 10.5px; color: var(--muted); min-width: 0; }
+.brow { margin: 10px 0; }
+.brow .tp { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.brow .vl { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.track { height: 10px; background: var(--grid); border-radius: 0 5px 5px 0; }
+.fill { height: 100%; border-radius: 0 4px 4px 0; background: var(--accent); }
+
+#scan { position: fixed; inset: 0; z-index: 50; background: #000; color: #fff; }
+#scan video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.reticle { position: absolute; left: 50%; top: 42%; width: min(68vw, 300px); aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 22px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.45); border: 3px solid rgba(255,255,255,.9); pointer-events: none; }
+.scantop { position: absolute; top: 0; left: 0; right: 0; padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: linear-gradient(#000a, transparent); }
+.scantitle { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.scanbottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(transparent, #000c); display: flex; flex-direction: column; gap: 10px; }
+.smsg { font-size: 17px; font-weight: 600; min-height: 46px; overflow-wrap: anywhere; }
+.smsg.bad { color: #ffb4b4; }
+.smsg small { display: block; font-weight: 400; font-size: 13px; opacity: .85; }
+.srow { display: flex; gap: 8px; flex-wrap: wrap; }
+#scan .btn { background: #fcfcfb; color: #0b0b0b; border-color: #fcfcfb; }
+#scan .smsg .btn { margin-top: 8px; }
+@media (prefers-reduced-motion: no-preference) { .fill, .evo .b { transition: height .25s, width .25s; } }
+#c-info { margin: 4px 0 14px; color: var(--ink2); font-size: 14px; }
+#c-info:empty { display: none; }
+.fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.pct-in { position: relative; }
+.pct-in span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.pct-in input { padding-right: 32px; }
+@media (min-width: 900px) {
+  .wrap, #nav, #cartbar { max-width: 880px; }
+  .sheet { max-width: 600px; }
+}
+
+.brand h1 { color: var(--ink); }
+.brand h1::after { content: ''; display: block; width: 36px; height: 4px; border-radius: 2px; margin-top: 4px; background: linear-gradient(90deg, var(--brand), var(--teal)); }
+.tabtitle { color: var(--brand); }
+.row:disabled { cursor: default; opacity: 1; }
+.row:disabled .amt { color: var(--ink); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--teal); vertical-align: middle; margin-left: 2px; }
+.rsel { font: inherit; border: 1px solid var(--axis); border-radius: 10px; padding: 8px 10px; background: var(--surface); color: var(--ink); max-width: 46%; }
+.gate { max-width: 420px; margin: 18vh auto 0; text-align: center; padding: 0 8px; }
+.gate h1 { font-family: var(--display); font-size: 26px; margin: 14px 0 8px; overflow-wrap: anywhere; }
+.gate-mark { width: 240px; max-width: 70vw; height: auto; display: block; margin: 0 auto; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.brand { align-items: center; }
+.brand .logo { height: 76px; width: auto; display: block; margin: -4px 0 -2px -6px; }
+.gate .btn-big { margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="cartbar"></div>
+<nav id="nav" aria-label="Navegação"></nav>
+<div id="sheet"></div>
+<div id="scan" hidden></div>
+<div id="toast" role="status" hidden></div>
+<input id="f-backup" type="file" accept=".json,application/json,text/plain" hidden>
+<input id="f-csv" type="file" accept=".csv,text/csv,text/plain" hidden>
+<!-- jsQR 1.4.0 (Apache-2.0), leitor de QR Code usado quando o navegador não tem leitor próprio. -->
+<script src="jsQR.js"></script>
+<script src="firebase-config.js"></script>
+<script src="firebase-bundle.js"></script>
+<script>
+(function () {
+'use strict';
+const KEY = 'pdv:v1', CKEY = 'pdv:cart';
+const PAY = { dinheiro: 'Dinheiro', pix: 'Pix', credito: 'Crédito', debito: 'Débito', outro: 'Outro' };
+const FEEKEYS = [['dinheiro', 'Dinheiro'], ['pix', 'Pix'], ['debito', 'Débito'], ['c1', 'Crédito 1x (à vista)'], ['c2', 'Crédito 2x'], ['c3', 'Crédito 3x'], ['outro', 'Outro']];
+const DEFCATS = ['Moletons', 'Camisetas', 'Camiseta infantil', 'Moletom infantil', 'Acessórios', 'Bolsas', 'Papelaria'];
+const feeKey = (pay, inst) => pay === 'credito' ? 'c' + (inst >= 1 && inst <= 3 ? inst : 1) : pay;
+const feeBp = (pay, inst) => Math.max(0, +(D.store.fees || {})[feeKey(pay, inst)] || 0);
+const fmtPct = bp => (bp / 100).toFixed(2).replace('.', ',');
+function parsePct(s) { s = String(s == null ? '' : s).replace(/[^\d.,]/g, '').replace(',', '.'); const n = parseFloat(s); return isFinite(n) && n > 0 ? Math.min(10000, Math.round(n * 100)) : 0; }
+const payLabel = s => PAY[s.pay] + (s.pay === 'credito' && s.inst > 1 ? ' ' + s.inst + 'x' : '');
+const payKey = s => s.pay === 'credito' ? 'credito-' + (s.inst > 1 ? s.inst : 1) : s.pay;
+const payKeyLabel = k => k.indexOf('credito-') === 0 ? 'Crédito' + (k.slice(8) !== '1' ? ' ' + k.slice(8) + 'x' : ' à vista') : PAY[k];
+function allocate(amount, w) { const sum = w.reduce((a, b) => a + b, 0); if (!sum) return w.map(() => 0); let acc = 0, prev = 0; return w.map(x => { acc += x; const cum = Math.round(amount * acc / sum); const r = cum - prev; prev = cum; return r; }); }
+function saleLines(s) {
+  const g = s.items.map(i => i.qty * i.price), net = allocate(s.total || 0, g), fee = allocate(s.fee || 0, g);
+  return s.items.map((i, k) => { const cost = i.qty * (i.cost || 0); return { i, gross: g[k], net: net[k], fee: fee[k], cost, profit: net[k] - fee[k] - cost }; });
+}
+function saleCalc(s) { const cost = s.items.reduce((a, i) => a + i.qty * (i.cost || 0), 0), fee = s.fee || 0; return { cost, fee, profit: (s.total || 0) - cost - fee }; }
+function reportRows(ok) {
+  const m = new Map();
+  ok.forEach(s => saleLines(s).forEach(x => {
+    const k = x.i.vid; let r = m.get(k);
+    if (!r) { r = { name: x.i.name, label: x.i.label, sku: x.i.sku, cat: catOfItem(x.i), q: 0, rev: 0, cost: 0, fee: 0, profit: 0, nocost: false }; m.set(k, r); }
+    r.q += x.i.qty; r.rev += x.net; r.cost += x.cost; r.fee += x.fee; r.profit += x.profit; if (!x.i.cost) r.nocost = true;
+  }));
+  return Array.from(m.values()).sort((a, b) => b.profit - a.profit);
+}
+
+const MAB = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const MT = { venda: 'Venda', cancelamento: 'Venda cancelada', entrada: 'Entrada', saida: 'Saída', contagem: 'Contagem', inicial: 'Estoque inicial', importacao: 'Importação' };
+const IC = {
+  cam: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h3l2-2h8l2 2h3v12H3z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  cart: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h11L21 7H6"/></svg>',
+  box: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></svg>',
+  stock: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  rcpt: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
+  more: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M18 6h2M4 12h2M12 12h8M4 18h10M20 18h0"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
+  right: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>'
+};
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36);
+const brl = c => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmtIn = c => (c / 100).toFixed(2).replace('.', ',');
+const norm = s => String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+const dayKey = ts => { const d = new Date(ts); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+const fmtDate = ts => { const d = new Date(ts); return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear(); };
+const fmtTime = ts => { const d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+function parseMoney(s) {
+  s = String(s == null ? '' : s).replace(/[^\d.,]/g, ''); if (!s) return 0;
+  if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  const n = parseFloat(s); return isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
+}
+const toInt = s => { const n = parseInt(String(s).replace(/[^\d-]/g, ''), 10); return isFinite(n) ? n : NaN; };
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, 3000); }
+const val = id => { const el = $(id); return el ? el.value : ''; };
+
+/* ---------- estado e armazenamento ---------- */
+const S = { tab: 'caixa', qs: { caixa: '', produtos: '', estoque: '' }, lim: 60, cat: '', sf: 'todos', period: 'hoje', sheet: null, imp: null, pendBk: null, count: {},
+  cart: { items: [], disc: '', dtype: 'val', pay: 'dinheiro', recv: '', cust: '', note: '', inst: 1 } };
+const D = { store: { name: '', footer: 'Obrigado pela compra!', fees: {}, cats: DEFCATS.slice() }, products: [], sales: [], moves: [], seq: 0 };
+let idx = null, warned = false;
+/* categorias: lista do dono (D.store.cats) + qualquer categoria que já esteja num produto (planilhas e backups antigos) */
+function catNames() {
+  const out = [], seen = new Set();
+  (D.store.cats || []).concat(D.products.map(p => p.cat || '')).forEach(c => { c = String(c || '').trim(); const k = norm(c); if (c && !seen.has(k)) { seen.add(k); out.push(c); } });
+  return out;
+}
+function addCat(name) {
+  name = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 40); if (!name) return '';
+  const hit = catNames().find(c => norm(c) === norm(name)); if (hit) { if (!(D.store.cats || []).some(c => norm(c) === norm(hit))) D.store.cats.push(hit); return hit; }
+  name = name.charAt(0).toUpperCase() + name.slice(1); D.store.cats.push(name); return name;
+}
+const catOk = p => !S.cat || (S.cat === '__none' ? !p.cat : norm(p.cat) === norm(S.cat));
+function catBar() {
+  const list = catNames(), none = D.products.some(p => !p.cat);
+  if (S.cat && S.cat !== '__none' && !list.some(c => norm(c) === norm(S.cat))) S.cat = '';
+  const b = (v, t) => '<button class="chip" data-act="catf" data-v="' + esc(v) + '" aria-pressed="' + (S.cat === v) + '">' + esc(t) + '</button>';
+  return '<div class="pbar"><div class="chips" role="group" aria-label="Categoria">' + b('', 'Todas') + list.map(c => b(c, c)).join('') + (none ? b('__none', 'Sem categoria') : '') + '</div></div>';
+}
+function catField(cur) {
+  const list = catNames();
+  return fld('Categoria', 'p-cat', '<select id="p-cat"><option value="">Sem categoria</option>' + list.map(c => '<option value="' + esc(c) + '"' + (norm(c) === norm(cur) ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</select>') +
+    fld('Ou crie uma categoria nova', 'p-cat-new', '<input id="p-cat-new" maxlength="40" autocomplete="off" placeholder="Ex.: Meias">', 'Se preencher aqui, vale esta em vez da lista acima.');
+}
+const readCat = () => { const n = val('p-cat-new').trim(); return n ? addCat(n) : val('p-cat'); };
+function catOfItem(i) { const p = D.products.find(x => x.id === i.pid); return (p && p.cat) || ''; }
+function catsCard() {
+  const used = c => D.products.filter(p => norm(p.cat) === norm(c)).length;
+  return '<section class="card" data-need="config"><h2>Categorias</h2><p class="hint">Organizam os produtos e o relatório de vendas. Para trocar a categoria de um produto, abra o produto em Produtos.</p><div class="list" style="margin-top:0">' +
+    catNames().map(c => '<div class="row"><div class="mid"><div class="t1">' + esc(c) + '</div><div class="t2">' + plural(used(c), 'produto', 'produtos') + '</div></div><button class="btn" data-act="delCat" data-v="' + esc(c) + '">Remover</button></div>').join('') +
+    '</div><div class="field"><label for="c-new">Nova categoria</label><div class="inrow"><input id="c-new" maxlength="40" autocomplete="off" placeholder="Ex.: Meias"><button class="btn btn-primary" data-act="addCat">Adicionar</button></div></div></section>';
+}
+function applyData(o) {
+  D.store = Object.assign({ name: '', footer: 'Obrigado pela compra!' }, o && o.store || {}); if (!D.store.fees || typeof D.store.fees !== 'object') D.store.fees = {};
+  D.store.cats = Array.isArray(D.store.cats) ? D.store.cats.map(c => String(c == null ? '' : c).trim()).filter(Boolean) : DEFCATS.slice();
+  D.products = (Array.isArray(o.products) ? o.products : []).filter(p => p && p.id).map(p => { p.variants = Array.isArray(p.variants) ? p.variants.filter(v => v && v.id) : []; return p; });
+  D.sales = Array.isArray(o.sales) ? o.sales : [];
+  D.moves = Array.isArray(o.moves) ? o.moves : [];
+  D.seq = +o.seq || D.sales.reduce((m, s) => Math.max(m, s.n || 0), 0);
+  idx = null;
+}
+function load() {
+  try { const raw = localStorage.getItem(KEY); if (raw) applyData(JSON.parse(raw)); } catch (e) {}
+  try { const c = localStorage.getItem(CKEY); if (c) { const o = JSON.parse(c); if (o && Array.isArray(o.items)) Object.assign(S.cart, o); } } catch (e) {}
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+}
+function save() { saveLocal(); cloudPush(); }
+function saveLocal() {
+  idx = null;
+  if (D.moves.length > 3000) D.moves = D.moves.slice(-3000);
+  try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (e) { if (!warned) { warned = true; toast('Não foi possível salvar: armazenamento cheio. Faça um backup em Mais.'); } }
+}
+function saveCart() { try { localStorage.setItem(CKEY, JSON.stringify(S.cart)); } catch (e) {} }
+function index() {
+  if (idx) return idx;
+  const bySku = new Map(), byId = new Map();
+  D.products.forEach(p => p.variants.forEach(v => { byId.set(v.id, { p, v }); const k = norm(v.sku); if (k && !bySku.has(k)) bySku.set(k, { p, v }); }));
+  idx = { bySku, byId }; return idx;
+}
+const vname = (p, v) => p.name + (v.label ? ' · ' + v.label : '');
+function skuTaken(sku, exceptVid) { const k = norm(sku); if (!k) return false; const h = index().bySku.get(k); return !!(h && h.v.id !== exceptVid); }
+function moveStock(v, delta, type, note, ref) {
+  v.stock = (v.stock || 0) + delta;
+  D.moves.push({ id: uid(), ts: Date.now(), vid: v.id, delta, type, note: note || '', ref: ref || '', after: v.stock });
+}
+function resolveCode(raw) {
+  const I = index(); const s = String(raw || '').trim(); if (!s) return null;
+  let h = I.bySku.get(norm(s)); if (h) return h;
+  try { const o = JSON.parse(s); if (o && typeof o === 'object') { const k = o.sku || o.SKU || o.Sku || o.codigo || o.code; if (k) { h = I.bySku.get(norm(k)); if (h) return h; } } } catch (e) {}
+  const toks = s.split(/[\s\/?&=#:;,|]+/).filter(Boolean);
+  for (const t of toks) {
+    h = I.bySku.get(norm(t)); if (h) return h;
+    try { h = I.bySku.get(norm(decodeURIComponent(t))); if (h) return h; } catch (e) {}
+  }
+  const ns = norm(s); let best = null;
+  I.bySku.forEach((hit, k) => { if (k.length >= 4 && ns.indexOf(k) >= 0 && (!best || k.length > best.k.length)) best = { k, hit }; });
+  return best ? best.hit : null;
+}
+function stockState(v) {
+  const s = v.stock || 0, m = v.min || 0;
+  if (s < 0) return { t: 'Negativo', c: 'crit' };
+  if (s === 0) return { t: 'Sem estoque', c: 'warn' };
+  if (m > 0 && s <= m) return { t: 'Estoque baixo', c: 'warn' };
+  return null;
+}
+const pill = st => st ? '<span class="pill ' + st.c + '">' + st.t + '</span>' : '';
+function priceRange(p) {
+  const ps = p.variants.map(v => v.price || 0); if (!ps.length) return '';
+  const a = Math.min.apply(null, ps), b = Math.max.apply(null, ps);
+  return a === b ? brl(a) : brl(a) + ' a ' + brl(b);
+}
+const totalStock = p => p.variants.reduce((s, v) => s + (v.stock || 0), 0);
+function matchP(p, q) {
+  const toks = norm(q).split(/\s+/).filter(Boolean); if (!toks.length) return true;
+  const hay = norm(p.name + ' ' + (p.cat || '') + ' ' + p.variants.map(v => (v.label || '') + ' ' + (v.sku || '')).join(' '));
+  return toks.every(t => hay.indexOf(t) >= 0);
+}
+function matchV(p, v, q) {
+  const toks = norm(q).split(/\s+/).filter(Boolean); if (!toks.length) return true;
+  const hay = norm(p.name + ' ' + (p.cat || '') + ' ' + (v.label || '') + ' ' + (v.sku || ''));
+  return toks.every(t => hay.indexOf(t) >= 0);
+}
+
+/* ---------- carrinho ---------- */
+function cartLines() {
+  const I = index(); S.cart.items = S.cart.items.filter(l => I.byId.has(l.vid) && l.qty > 0);
+  return S.cart.items.map(l => { const h = I.byId.get(l.vid); return { l, p: h.p, v: h.v }; });
+}
+const cartQty = vid => { const l = S.cart.items.find(x => x.vid === vid); return l ? l.qty : 0; };
+function addCart(vid, n) {
+  const h = index().byId.get(vid); if (!h) return 0;
+  let l = S.cart.items.find(x => x.vid === vid);
+  if (!l) { if (n <= 0) return 0; l = { vid, qty: 0, price: h.v.price || 0 }; S.cart.items.push(l); }
+  l.qty += n; const q = Math.max(l.qty, 0);
+  if (l.qty <= 0) S.cart.items = S.cart.items.filter(x => x !== l);
+  saveCart(); return q;
+}
+function totals() {
+  let sub = 0, q = 0; cartLines().forEach(({ l }) => { sub += l.qty * l.price; q += l.qty; });
+  let disc = 0; const raw = S.cart.disc;
+  if (raw) { if (S.cart.dtype === 'pct') { const pct = Math.min(100, parseFloat(String(raw).replace(',', '.')) || 0); disc = Math.round(sub * pct / 100); } else disc = parseMoney(raw); }
+  disc = Math.min(Math.max(disc, 0), sub);
+  return { sub, q, disc, total: sub - disc };
+}
+function renderBar() {
+  const t = totals(), el = $('cartbar');
+  el.innerHTML = t.q ? '<button class="cb" data-act="cart"><span><strong>' + plural(t.q, 'item', 'itens') + '</strong> no carrinho</span><span class="cbv">' + brl(t.total) + ' · Finalizar</span></button>' : '';
+}
+function newSaleReset() { S.cart = { items: [], disc: '', dtype: 'val', pay: S.cart.pay || 'dinheiro', recv: '', cust: '', note: '', inst: 1 }; saveCart(); }
+function finishSale() {
+  if (!can('sell')) { toast('Você não tem permissão para vender.'); return; }
+  collectCart();
+  if (!can('discount')) { S.cart.disc = ''; S.cart.items.forEach(l => { const h = index().byId.get(l.vid); if (h) l.price = h.v.price || 0; }); }
+  const L = cartLines(), t = totals(), c = S.cart;
+  if (!L.length) return;
+  const recv = c.pay === 'dinheiro' ? parseMoney(c.recv) : 0;
+  if (c.pay === 'dinheiro' && recv > 0 && recv < t.total) { toast('O valor recebido é menor que o total.'); return; }
+  D.seq++;
+  const sale = { id: uid(), n: D.seq, ts: Date.now(), items: [], sub: t.sub, disc: t.disc, total: t.total, pay: c.pay, inst: c.pay === 'credito' ? (c.inst >= 1 && c.inst <= 3 ? c.inst : 1) : 0, feeBp: 0, fee: 0, recv, change: recv > 0 ? recv - t.total : 0, cust: (c.cust || '').trim(), note: (c.note || '').trim(), status: 'ok' };
+  sale.feeBp = feeBp(sale.pay, sale.inst); sale.fee = Math.round(sale.total * sale.feeBp / 10000);
+  L.forEach(({ l, p, v }) => {
+    sale.items.push({ vid: v.id, pid: p.id, name: p.name, label: v.label || '', sku: v.sku || '', qty: l.qty, price: l.price, cost: v.cost || 0 });
+    moveStock(v, -l.qty, 'venda', '', sale.id);
+  });
+  D.sales.push(sale); save(); newSaleReset(); closeSheet(); render(); openSale(sale.id, true);
+}
+function cancelSale(id) {
+  const s = D.sales.find(x => x.id === id); if (!s || s.status !== 'ok') return;
+  const I = index();
+  s.items.forEach(i => { const h = I.byId.get(i.vid); if (h) moveStock(h.v, i.qty, 'cancelamento', 'Venda nº ' + s.n, s.id); });
+  s.status = 'canceled'; s.canceledAt = Date.now(); save(); closeSheet(); render(); toast('Venda cancelada e estoque devolvido.');
+}
+function receiptText(s) {
+  const L = [];
+  if (D.store.name) L.push(D.store.name);
+  L.push('Venda nº ' + s.n + ' · ' + fmtDate(s.ts) + ' ' + fmtTime(s.ts)); L.push('');
+  s.items.forEach(i => L.push(i.qty + 'x ' + i.name + (i.label ? ' (' + i.label + ')' : '') + ' — ' + brl(i.qty * i.price)));
+  L.push('');
+  if (s.disc) { L.push('Subtotal: ' + brl(s.sub)); L.push('Desconto: -' + brl(s.disc)); }
+  L.push('Total: ' + brl(s.total)); L.push('Pagamento: ' + payLabel(s) + (s.pay === 'credito' && s.inst > 1 ? ' de ' + brl(Math.round(s.total / s.inst)) : ''));
+  if (s.pay === 'dinheiro' && s.recv > 0) { L.push('Recebido: ' + brl(s.recv)); L.push('Troco: ' + brl(s.change)); }
+  if (s.cust) L.push('Cliente: ' + s.cust);
+  if (D.store.footer) { L.push(''); L.push(D.store.footer); }
+  return L.join('\n');
+}
+async function shareReceipt(id) {
+  const s = D.sales.find(x => x.id === id); if (!s) return; const text = receiptText(s);
+  if (navigator.share) { try { await navigator.share({ text }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(text); toast('Recibo copiado.'); } catch (e) { toast('Não foi possível compartilhar.'); }
+}
+
+/* ---------- telas ---------- */
+function header() {
+  return '<header class="brand"><img class="logo" src="logo.png" alt="" width="101" height="76"><h1 class="sr">' + esc(D.store.name || 'Meu PDV') + '</h1><span class="note" id="hnote">' + cloudLabel() + '</span></header>';
+}
+function navHtml() {
+  const tabs = [['caixa', 'Caixa', IC.cart], ['produtos', 'Produtos', IC.box], ['estoque', 'Estoque', IC.stock], ['vendas', 'Vendas', IC.rcpt], ['mais', 'Mais', IC.more]];
+  const dot = hasCfg() && can('users') && CL.members.some(m => m.role === 'pendente');
+  return tabs.filter(t => tabAllowed(t[0])).map(t => '<button data-act="tab" data-v="' + t[0] + '"' + (S.tab === t[0] ? ' aria-current="page"' : '') + '>' + t[2] + '<span>' + t[1] + (t[0] === 'mais' && dot ? ' <i class="dot" aria-label="pedido de acesso"></i>' : '') + '</span></button>').join('');
+}
+function searchBox(ph) { return '<div class="pbar" style="margin-top:12px"><input id="q" type="text" inputmode="search" enterkeyhint="search" autocomplete="off" placeholder="' + ph + '" value="' + esc(S.qs[S.tab]) + '" aria-label="Buscar"></div>'; }
+function moreBtn(total, shown) { return total > shown ? '<button class="linkbtn" data-act="limmore">Mostrar mais (' + (total - shown) + ')</button>' : ''; }
+
+function onboarding() {
+  return '<div class="empty"><h2>Cadastre seus produtos</h2><p>Crie um produto e todas as variações dele (cor, tamanho, medida), sem limite. Se você já tem uma planilha, importe em Mais.</p><div class="btns"><button class="btn btn-primary" data-act="newProduct">Novo produto</button><button class="btn" data-act="gomais">Importar planilha</button></div></div>';
+}
+function prodRows(q, kind) {
+  let P = D.products.filter(p => matchP(p, q));
+  if (S.cat) P = P.filter(catOk);
+  P.sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  const shown = P.slice(0, S.lim); let h = '';
+  const direct = q && index().bySku.get(norm(q));
+  if (kind === 'caixa' && direct) h += '<div class="list"><button class="row" data-act="addv" data-vid="' + direct.v.id + '"><div class="mid"><div class="t1">' + esc(vname(direct.p, direct.v)) + '</div><div class="t2">SKU ' + esc(direct.v.sku) + ' · ' + brl(direct.v.price || 0) + '</div></div><span class="amt">+ Adicionar</span></button></div>';
+  if (!P.length) return h + '<div class="empty"><p>' + (q ? 'Nada encontrado para “' + esc(q) + '”.' : 'Nenhum produto ainda.') + '</p></div>';
+  h += '<div class="list">' + shown.map(p => {
+    const st = totalStock(p), out = p.variants.filter(v => (v.stock || 0) <= 0).length;
+    const sub = plural(p.variants.length, 'variação', 'variações') + ' · ' + plural(st, 'peça', 'peças') + (out ? ' · ' + plural(out, 'sem estoque', 'sem estoque') : '');
+    return '<button class="row" data-act="' + (kind === 'caixa' ? 'pick' : 'editProduct') + '" data-id="' + p.id + '"><div class="mid"><div class="t1">' + esc(p.name) + '</div><div class="t2">' + esc(sub) + '</div></div><span class="amt">' + esc(priceRange(p)) + '</span></button>';
+  }).join('') + '</div>' + moreBtn(P.length, shown.length);
+  return h;
+}
+function caixa() {
+  return '<div class="pbar"><button class="btn btn-primary btn-big" data-act="scanSale">' + IC.cam + 'Ler QR Code</button></div>' +
+    (D.products.length ? catBar() + searchBox('Buscar produto, variação ou SKU') + '<div id="list">' + prodRows(S.qs.caixa, 'caixa') + '</div>' : onboarding());
+}
+function produtos() {
+  let h = '<h2 class="tabtitle">Produtos</h2><div class="pbar" style="margin-top:6px"><button class="btn btn-primary" data-act="newProduct">Novo produto</button></div>';
+  if (!D.products.length) return h + onboarding();
+  h += catBar();
+  return h + searchBox('Buscar produto, variação ou SKU') + '<div id="list">' + prodRows(S.qs.produtos, 'produtos') + '</div>';
+}
+function stockRows() {
+  const q = S.qs.estoque, groups = []; let count = 0, total = 0;
+  D.products.slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name))).forEach(p => {
+    const vs = !catOk(p) ? [] : p.variants.filter(v => matchV(p, v, q) && (S.sf === 'todos' || (v.stock || 0) <= (v.min || 0)));
+    if (vs.length) { groups.push({ p, vs }); total += vs.length; }
+  });
+  if (!total) return '<div class="empty"><p>' + (S.sf === 'baixo' ? 'Nenhuma variação acabando. Bom sinal.' : q ? 'Nada encontrado para “' + esc(q) + '”.' : 'Nenhuma variação cadastrada.') + '</p></div>';
+  let h = '<div class="list">';
+  for (const g of groups) {
+    if (count >= S.lim) break;
+    h += '<div class="ghead">' + esc(g.p.name) + '</div>';
+    for (const v of g.vs) {
+      if (count >= S.lim) break; count++;
+      h += '<button class="row" data-act="adjust" data-vid="' + v.id + '"><div class="mid"><div class="t1">' + esc(v.label || 'Única') + '</div><div class="t2">' + esc(v.sku || 'sem SKU') + ' ' + pill(stockState(v)) + '</div></div><span class="amt">' + (v.stock || 0) + '<small>un.</small></span></button>';
+    }
+  }
+  return h + '</div>' + moreBtn(total, count);
+}
+function estoque() {
+  let pieces = 0, valSale = 0, nvar = 0, low = 0;
+  D.products.forEach(p => p.variants.forEach(v => { nvar++; const s = Math.max(v.stock || 0, 0); pieces += s; valSale += s * (v.price || 0); if ((v.stock || 0) <= (v.min || 0)) low++; }));
+  return '<h2 class="tabtitle">Estoque</h2>' +
+    '<div class="kpis"><div><span class="k">Peças em estoque</span><span class="kv">' + pieces + '</span></div><div><span class="k">Valor a preço de venda</span><span class="kv">' + brl(valSale) + '</span></div></div>' +
+    '<div class="pbar"><div class="two"><button class="btn btn-primary" data-act="scanCount">' + IC.cam + 'Contar</button><button class="btn" data-act="scanIn">' + IC.cam + 'Dar entrada</button></div></div>' +
+    '<div class="pbar"><div class="chips" role="group" aria-label="Filtro"><button class="chip" data-act="sf" data-v="todos" aria-pressed="' + (S.sf === 'todos') + '">Todas (' + nvar + ')</button><button class="chip" data-act="sf" data-v="baixo" aria-pressed="' + (S.sf === 'baixo') + '">Acabando (' + low + ')</button></div></div>' +
+    catBar() + searchBox('Buscar produto, variação ou SKU') + '<div id="list">' + stockRows() + '</div>';
+}
+
+/* ---------- vendas ---------- */
+function periodTest() {
+  const now = new Date(), tk = dayKey(now.getTime());
+  if (S.period === 'hoje') return ts => dayKey(ts) === tk;
+  if (S.period === '7d') { const st = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime(); return ts => ts >= st; }
+  if (S.period === 'mes') return ts => { const d = new Date(ts); return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); };
+  return () => true;
+}
+function chartData(sales) {
+  const now = new Date(), out = [];
+  if (S.period === '7d') for (let i = 6; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i); out.push({ k: dayKey(d.getTime()), l: pad(d.getDate()), t: 0 }); }
+  else if (S.period === 'mes') { const n = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); for (let i = 1; i <= n; i++) out.push({ k: now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(i), l: i % 5 === 0 || i === 1 ? String(i) : '', t: 0 }); }
+  else if (S.period === 'tudo') for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ k: d.getFullYear() + '-' + pad(d.getMonth() + 1), l: MAB[d.getMonth()], t: 0, m: true }); }
+  else return null;
+  const map = new Map(out.map(o => [o.k, o]));
+  sales.forEach(s => { const o = map.get(S.period === 'tudo' ? dayKey(s.ts).slice(0, 7) : dayKey(s.ts)); if (o) o.t += s.total; });
+  return out;
+}
+function vendas() {
+  const test = periodTest();
+  const all = D.sales.filter(s => test(s.ts)).sort((a, b) => b.ts - a.ts), ok = all.filter(s => s.status === 'ok');
+  const tot = ok.reduce((a, s) => a + s.total, 0), pcs = ok.reduce((a, s) => a + s.items.reduce((x, i) => x + i.qty, 0), 0);
+  let h = '<h2 class="tabtitle">Vendas</h2><div class="pbar" style="margin-top:6px"><div class="chips" role="group" aria-label="Período">' +
+    [['hoje', 'Hoje'], ['7d', '7 dias'], ['mes', 'Este mês'], ['tudo', 'Tudo']].map(p => '<button class="chip" data-act="period" data-v="' + p[0] + '" aria-pressed="' + (S.period === p[0]) + '">' + p[1] + '</button>').join('') + '</div></div>';
+  h += '<div class="kpis big"><div><span class="k">Total vendido</span><span class="kv">' + brl(tot) + '</span></div><div><span class="k">Vendas</span><span class="kv">' + ok.length + '</span></div></div>';
+  h += '<div class="kpis"><div><span class="k">Ticket médio</span><span class="kv">' + brl(ok.length ? Math.round(tot / ok.length) : 0) + '</span></div><div><span class="k">Peças vendidas</span><span class="kv">' + pcs + '</span></div></div>';
+  const cal = ok.map(saleCalc), costT = cal.reduce((a, x) => a + x.cost, 0), feeT = cal.reduce((a, x) => a + x.fee, 0), profT = tot - costT - feeT, noCost = ok.reduce((a, s) => a + s.items.filter(i => !i.cost).length, 0);
+  h += '<div class="kpis" data-need="costs"><div><span class="k">Custo dos produtos</span><span class="kv">' + brl(costT) + '</span></div><div><span class="k">Taxas da maquininha</span><span class="kv">' + brl(feeT) + '</span></div></div>';
+  h += '<div class="kpis big" data-need="costs"><div><span class="k">Lucro (vendas − custo − taxas)</span><span class="kv">' + brl(profT) + '</span></div><div><span class="k">Margem</span><span class="kv">' + (tot > 0 ? (profT / tot * 100).toFixed(1).replace('.', ',') + '%' : '—') + '</span></div></div>';
+  if (noCost) h += '<p class="foot" data-need="costs">' + plural(noCost, 'item vendido está', 'itens vendidos estão') + ' sem custo cadastrado. Nesses itens o lucro aparece maior do que é de verdade.</p>';
+  if (!ok.length && !all.length) return h + '<div class="empty"><p>Nenhuma venda neste período.</p></div>';
+  const cd = chartData(ok);
+  if (cd && ok.length) {
+    const max = Math.max.apply(null, cd.map(x => x.t)) || 1, mi = cd.findIndex(x => x.t === max);
+    h += '<section class="card"><h2>' + (S.period === 'tudo' ? 'Por mês' : 'Por dia') + '</h2><p class="hint">Total vendido em cada ' + (S.period === 'tudo' ? 'mês' : 'dia') + '.</p><div class="evo">' +
+      cd.map((x, i) => '<div class="col" role="img" aria-label="' + esc(x.k) + ': ' + brl(x.t) + '"><span class="v">' + (i === mi && x.t > 0 ? brl(x.t).replace(/ /g, ' ').replace(',00', '') : '') + '</span><span class="b" style="height:' + (x.t > 0 ? Math.max(3, Math.round(x.t / max * 100)) : 2) + 'px"></span></div>').join('') + '</div><div class="evol">' + cd.map(x => '<span>' + x.l + '</span>').join('') + '</div></section>';
+  }
+  if (ok.length) {
+    const byPay = {}; const byFee = {}; ok.forEach(s => { const k = payKey(s); byPay[k] = (byPay[k] || 0) + s.total; byFee[k] = (byFee[k] || 0) + (s.fee || 0); });
+    const pe = Object.keys(byPay).sort((a, b) => byPay[b] - byPay[a]), pm = byPay[pe[0]] || 1;
+    h += '<section class="card"><h2>Formas de pagamento</h2><p class="hint">Quanto entrou em cada forma.</p>' + pe.map(k => '<div class="brow"><div class="tp"><span>' + payKeyLabel(k) + '</span><span class="vl">' + brl(byPay[k]) + (byFee[k] && can('costs') ? ' · taxa ' + brl(byFee[k]) : '') + '</span></div><div class="track"><div class="fill" style="width:' + Math.max(2, Math.round(byPay[k] / pm * 100)) + '%"></div></div></div>').join('') + '</section>';
+    const byCat = {}; ok.forEach(s => saleLines(s).forEach(x => { const k = catOfItem(x.i) || 'Sem categoria'; const r = (byCat[k] = byCat[k] || { q: 0, t: 0, pr: 0 }); r.q += x.i.qty; r.t += x.net; r.pr += x.profit; }));
+    const ce = Object.keys(byCat).sort((a, b) => byCat[b].t - byCat[a].t), cm = byCat[ce[0]].t || 1;
+    h += '<section class="card"><h2>Vendas por categoria</h2><p class="hint">Valor vendido (já com desconto) em cada categoria.</p>' + ce.map(k => '<div class="brow"><div class="tp"><span style="min-width:0;overflow-wrap:anywhere">' + esc(k) + '</span><span class="vl">' + byCat[k].q + ' un. · ' + brl(byCat[k].t) + (can('costs') ? ' · lucro ' + brl(byCat[k].pr) : '') + '</span></div><div class="track"><div class="fill" style="width:' + Math.max(2, Math.round(byCat[k].t / cm * 100)) + '%"></div></div></div>').join('') + '</section>';
+    const top = {}; ok.forEach(s => s.items.forEach(i => { const k = i.vid; (top[k] = top[k] || { name: i.name + (i.label ? ' · ' + i.label : ''), q: 0, t: 0 }); top[k].q += i.qty; top[k].t += i.qty * i.price; }));
+    const tl = Object.values(top).sort((a, b) => b.q - a.q || b.t - a.t).slice(0, 5), tm = tl[0].q || 1;
+    h += '<section class="card"><h2>Mais vendidos</h2><p class="hint">Por quantidade de peças.</p>' + tl.map(x => '<div class="brow"><div class="tp"><span style="min-width:0;overflow-wrap:anywhere">' + esc(x.name) + '</span><span class="vl">' + x.q + ' un. · ' + brl(x.t) + '</span></div><div class="track"><div class="fill" style="width:' + Math.max(2, Math.round(x.q / tm * 100)) + '%"></div></div></div>').join('') + '</section>';
+  }
+  if (ok.length) {
+    const rr = reportRows(ok);
+    h += '<section class="card" data-need="costs"><h2>Relatório por produto</h2><p class="hint">Cada variação vendida, com SKU. Lucro = venda (já com desconto) − custo − taxa da maquininha.' + (rr.length > 12 ? ' Aqui aparecem as 12 de maior lucro; o CSV traz todas.' : '') + '</p><div class="list" style="margin-top:0">' + rr.slice(0, 12).map(r => '<div class="row"><div class="mid"><div class="t1" style="overflow-wrap:anywhere">' + esc(r.name) + (r.label ? ' · ' + esc(r.label) : '') + '</div><div class="t2">' + esc(r.sku || 'sem SKU') + ' · ' + r.q + ' un. · vendas ' + brl(r.rev) + ' · custo ' + brl(r.cost) + ' · taxa ' + brl(r.fee) + (r.nocost ? ' · <span class="warnt">sem custo</span>' : '') + '</div></div><span class="amt">' + brl(r.profit) + '</span></div>').join('') + '</div><div class="btnrow" style="margin-top:12px"><button class="btn btn-primary" data-act="csvReport">Baixar relatório (CSV)</button></div></section>';
+  }
+  h += '<div class="sect">Todas as vendas</div><div class="list">' + all.slice(0, S.lim).map(s => '<button class="row" data-act="sale" data-id="' + s.id + '"><div class="mid"><div class="t1">Venda nº ' + s.n + (s.status !== 'ok' ? ' <span class="pill crit">Cancelada</span>' : '') + '</div><div class="t2">' + fmtDate(s.ts) + ' ' + fmtTime(s.ts) + ' · ' + plural(s.items.reduce((a, i) => a + i.qty, 0), 'peça', 'peças') + ' · ' + payLabel(s) + (s.cust ? ' · ' + esc(s.cust) : '') + '</div></div><span class="amt"' + (s.status !== 'ok' ? ' style="text-decoration:line-through;opacity:.6"' : '') + '>' + brl(s.total) + '</span></button>').join('') + '</div>' + moreBtn(all.length, Math.min(all.length, S.lim));
+  return h;
+}
+
+/* ---------- mais: loja, planilhas e backup ---------- */
+function lastBk() { try { return localStorage.getItem('pdv:bk') || ''; } catch (e) { return ''; } }
+function mais() {
+  const lb = lastBk(); let h = '<h2 class="tabtitle">Mais</h2>' + contaCard() + pessoasCard() + catsCard();
+  h += '<section class="card" data-need="config"><h2>Sua loja</h2><p class="hint">Aparece no recibo.</p><div class="field"><label for="s-name">Nome da loja</label><input id="s-name" maxlength="60" autocomplete="off" value="' + esc(D.store.name) + '"></div><div class="field"><label for="s-foot">Mensagem no fim do recibo</label><input id="s-foot" maxlength="120" autocomplete="off" value="' + esc(D.store.footer) + '"></div><div class="btnrow"><button class="btn" data-act="saveStore">Salvar</button></div></section>';
+  h += '<section class="card" data-need="config"><h2>Taxas da maquininha</h2><p class="hint">Digite a taxa (em %) que a maquininha desconta de você em cada forma de pagamento. Os valores estão no seu contrato com a operadora; o app não os conhece, então começam em 0. Cada venda guarda a taxa vigente na hora, e mudar aqui não altera vendas antigas.</p><div class="fgrid">' + FEEKEYS.map(f => '<div class="field"><label for="f-' + f[0] + '">' + f[1] + '</label><div class="pct-in"><input id="f-' + f[0] + '" inputmode="decimal" autocomplete="off" placeholder="0,00" value="' + (D.store.fees[f[0]] ? fmtPct(D.store.fees[f[0]]) : '') + '"><span>%</span></div></div>').join('') + '</div><div class="btnrow"><button class="btn" data-act="saveFees">Salvar taxas</button></div></section>';
+  if (S.imp) h += impCard();
+  h += '<section class="card" data-need="products"><h2>Importar produtos por planilha</h2><p class="hint">Traga todos os produtos e variações de uma vez, com SKU, preço e estoque. Salve a planilha do Excel como CSV.</p><div class="btnrow"><button class="btn btn-primary" data-act="csvPick">Escolher arquivo CSV</button><button class="btn" data-act="csvTemplate">Baixar planilha modelo</button></div><p class="foot">Colunas: Produto, Variação, SKU, Preço, Custo, Estoque, Categoria (e, se quiser, Mínimo). Se o SKU já existir, a linha atualiza a variação em vez de criar outra.</p></section>';
+  h += '<section class="card" data-need="costs"><h2>Exportar para planilha</h2><p class="hint">Arquivos CSV que abrem no Excel.</p><div class="btnrow"><button class="btn" data-act="csvStock">Baixar estoque</button><button class="btn" data-act="csvSales">Baixar vendas</button></div></section>';
+  if (S.pendBk) h += '<section class="card" data-need="config"><h2>Substituir todos os dados?</h2><p class="hint">O backup tem ' + plural(S.pendBk.products.length, 'produto', 'produtos') + ' e ' + plural(S.pendBk.sales.length, 'venda', 'vendas') + '. Isso apaga o que existe neste aparelho e não pode ser desfeito.</p><div class="btnrow"><button class="btn btn-danger" data-act="bkApply">Substituir pelos dados do backup</button><button class="btn" data-act="bkCancel">Cancelar</button></div></section>';
+  h += '<section class="card" data-need="config"><h2>Backup</h2><p class="hint">Seus dados ficam só neste aparelho. Se você limpar os dados do navegador ou trocar de celular, eles se perdem. Gere um arquivo de tempos em tempos.</p><div class="btnrow"><button class="btn btn-primary" data-act="bkExport">Baixar backup</button><button class="btn" data-act="bkFile">Restaurar de um arquivo</button></div><p class="foot">' + (lb ? 'Último backup: ' + lb.split('-').reverse().join('/') + '.' : 'Você ainda não fez backup.') + ' Agora há ' + plural(D.products.length, 'produto', 'produtos') + ' e ' + plural(D.sales.length, 'venda', 'vendas') + '.</p><div class="field" style="margin-top:14px"><label for="bk-text">Ou cole o texto de um backup</label><textarea id="bk-text" placeholder="Cole aqui"></textarea></div><div class="btnrow"><button class="btn" data-act="bkPaste">Importar o texto colado</button></div></section>';
+  return h;
+}
+
+function render() {
+  const gate = gateHtml();
+  if (gate) { S.sheet = null; $('sheet').innerHTML = ''; $('app').innerHTML = gate; $('nav').innerHTML = ''; $('cartbar').innerHTML = ''; schedulePerms(); return; }
+  if (!tabAllowed(S.tab)) S.tab = ['caixa', 'produtos', 'estoque', 'vendas', 'mais'].find(tabAllowed);
+  const app = $('app'), body = S.tab === 'caixa' ? caixa() : S.tab === 'produtos' ? produtos() : S.tab === 'estoque' ? estoque() : S.tab === 'vendas' ? vendas() : mais();
+  app.innerHTML = header() + body; $('nav').innerHTML = navHtml(); renderBar(); schedulePerms();
+}
+function refreshList() { const l = $('list'); if (l) l.innerHTML = S.tab === 'estoque' ? stockRows() : prodRows(S.qs[S.tab], S.tab); }
+
+/* ---------- janelas ---------- */
+function sheetWrap(title, sub, body, actions) {
+  $('sheet').innerHTML = '<div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(title) + '"><h2>' + esc(title) + '</h2>' + (sub ? '<div class="ctxtag">' + sub + '</div>' : '') + body + '<div class="actions">' + actions + '</div></div>';
+}
+function closeSheet() { S.sheet = null; $('sheet').innerHTML = ''; }
+function fld(label, id, inner, tip) { return '<div class="field"><label for="' + id + '">' + label + '</label>' + inner + (tip ? '<span class="tip">' + tip + '</span>' : '') + '</div>'; }
+function moneyIn(id, v) { return '<div class="money-in"><span>R$</span><input id="' + id + '" inputmode="decimal" autocomplete="off" placeholder="0,00" value="' + esc(v || '') + '"></div>'; }
+function numIn(id, v, ph) { return '<input id="' + id + '" type="number" inputmode="numeric" step="1" placeholder="' + (ph || '0') + '" value="' + esc(v == null ? '' : v) + '">'; }
+const cancelBtn = '<button class="btn" data-act="close">Cancelar</button>';
+const armBtn = (act, label) => '<button class="btn btn-danger" data-act="' + act + '">' + label + '</button>';
+
+/* escolher variações na venda */
+function pickList(p, q) {
+  const vs = p.variants.filter(v => matchV(p, v, q)); if (!vs.length) return '<div class="empty"><p>Nenhuma variação encontrada.</p></div>';
+  return '<div class="list" style="margin-top:0">' + vs.map(v => {
+    const n = cartQty(v.id), st = stockState(v);
+    return '<div class="row"><div class="mid"><div class="t1">' + esc(v.label || 'Única') + '</div><div class="t2">' + esc(v.sku || 'sem SKU') + ' · ' + brl(v.price || 0) + ' · estoque ' + (v.stock || 0) + ' ' + pill(st) + '</div></div><div class="stepper"><button data-act="vdec" data-vid="' + v.id + '" aria-label="Tirar uma unidade"' + (n ? '' : ' disabled') + '>−</button><span>' + n + '</span><button data-act="vinc" data-vid="' + v.id + '" aria-label="Adicionar uma unidade">+</button></div></div>';
+  }).join('') + '</div>';
+}
+function openPick(pid) {
+  const p = D.products.find(x => x.id === pid); if (!p) return;
+  S.sheet = { type: 'pick', pid };
+  sheetWrap(p.name, plural(p.variants.length, 'variação', 'variações') + ' · toque em + para adicionar ao carrinho',
+    (p.variants.length > 8 ? '<div class="field"><input id="vq" type="text" inputmode="search" autocomplete="off" placeholder="Filtrar variação ou SKU" aria-label="Filtrar variações"></div>' : '') + '<div id="vlist">' + pickList(p, '') + '</div>',
+    '<button class="btn btn-primary" data-act="close">Pronto</button>');
+}
+function refreshPick() { const sh = S.sheet; if (!sh || sh.type !== 'pick') return; const p = D.products.find(x => x.id === sh.pid); const vl = $('vlist'); if (vl && p) vl.innerHTML = pickList(p, val('vq')); renderBar(); }
+
+/* carrinho */
+function collectCart() {
+  if (!$('c-disc') && !$('c-cust')) return; const c = S.cart;
+  if ($('c-disc')) c.disc = val('c-disc'); if ($('c-recv')) c.recv = val('c-recv'); if ($('c-cust')) c.cust = val('c-cust'); if ($('c-note')) c.note = val('c-note');
+  document.querySelectorAll('input[data-lp]').forEach(el => { const l = c.items.find(x => x.vid === el.dataset.lp); if (l) l.price = parseMoney(el.value); });
+  saveCart();
+}
+function openCart() { S.sheet = { type: 'cart' }; renderCart(); }
+function renderCart() {
+  collectCart(); const L = cartLines(), t = totals(), c = S.cart;
+  if (!L.length) { closeSheet(); renderBar(); return; }
+  const lines = L.map(({ l, p, v }) => '<div class="cline"><div class="t1">' + esc(p.name) + '</div><div class="t2">' + esc(v.label || 'Única') + ' · ' + esc(v.sku || 'sem SKU') + (l.qty > (v.stock || 0) ? ' · <span class="warnt">estoque do sistema: ' + (v.stock || 0) + '</span>' : '') + '</div><div class="ctl"><div class="stepper"><button data-act="cdec" data-vid="' + v.id + '" aria-label="Tirar uma unidade">−</button><span>' + l.qty + '</span><button data-act="cinc" data-vid="' + v.id + '" aria-label="Adicionar uma unidade">+</button></div><span class="x">×</span><input data-lp="' + v.id + '"' + (can('discount') ? '' : ' readonly') + ' inputmode="decimal" value="' + fmtIn(l.price) + '" aria-label="Preço unitário"><span class="lt" data-lt="' + v.id + '">' + brl(l.qty * l.price) + '</span></div></div>').join('');
+  const body = '<div class="list" style="margin-top:0">' + lines + '</div>' +
+    '<div style="margin-top:14px" data-need="discount"><div class="seg" role="group" aria-label="Tipo de desconto" style="margin-bottom:8px"><button data-act="dtype" data-v="val" aria-pressed="' + (c.dtype === 'val') + '">Desconto em R$</button><button data-act="dtype" data-v="pct" aria-pressed="' + (c.dtype === 'pct') + '">Desconto em %</button></div><input id="c-disc" inputmode="decimal" autocomplete="off" placeholder="' + (c.dtype === 'pct' ? 'Ex.: 10' : 'Ex.: 5,00') + '" value="' + esc(c.disc) + '" aria-label="Desconto"></div>' +
+    '<div style="margin:14px 0"><div class="totline"><span>Subtotal</span><span id="c-sub">' + brl(t.sub) + '</span></div><div class="totline"><span>Desconto</span><span id="c-dv">− ' + brl(t.disc) + '</span></div><div class="totline grand"><span>Total</span><span id="c-total">' + brl(t.total) + '</span></div></div>' +
+    '<div class="field"><label>Forma de pagamento</label><div class="chips">' + Object.keys(PAY).map(k => '<button class="chip" data-act="pay" data-v="' + k + '" aria-pressed="' + (c.pay === k) + '">' + PAY[k] + '</button>').join('') + '</div></div>' +
+    (c.pay === 'credito' ? '<div class="field"><label>Parcelas</label><div class="seg" role="group" aria-label="Parcelas">' + [1, 2, 3].map(n => '<button data-act="inst" data-v="' + n + '" aria-pressed="' + ((c.inst || 1) === n) + '">' + n + 'x</button>').join('') + '</div></div>' : '') +
+    '<div class="hint" id="c-info"></div>' +
+    (c.pay === 'dinheiro' ? fld('Valor recebido (opcional)', 'c-recv', moneyIn('c-recv', c.recv), '<span id="c-chg"></span>') : '') +
+    fld('Cliente (opcional)', 'c-cust', '<input id="c-cust" maxlength="60" autocomplete="off" value="' + esc(c.cust) + '">') + fld('Observação (opcional)', 'c-note', '<input id="c-note" maxlength="120" autocomplete="off" value="' + esc(c.note) + '">');
+  sheetWrap('Carrinho', plural(t.q, 'item', 'itens'), body, '<button class="btn btn-primary btn-big" data-act="finish">Finalizar venda</button><button class="btn" data-act="clearCart">Esvaziar carrinho</button><button class="btn" data-act="close">Continuar vendendo</button>');
+  updateCartTotals(); renderBar();
+}
+function updateCartTotals() {
+  const c = S.cart, t = totals();
+  if ($('c-sub')) $('c-sub').textContent = brl(t.sub); if ($('c-dv')) $('c-dv').textContent = '− ' + brl(t.disc); if ($('c-total')) $('c-total').textContent = brl(t.total);
+  const inf = $('c-info'); if (inf) { const n = c.pay === 'credito' ? (c.inst >= 1 && c.inst <= 3 ? c.inst : 1) : 0, bp = feeBp(c.pay, n), fee = Math.round(t.total * bp / 10000); inf.textContent = (n > 1 ? n + 'x de ' + brl(Math.round(t.total / n)) + '. ' : '') + (bp ? 'Taxa da maquininha (' + fmtPct(bp) + '%): ' + brl(fee) + ' · você recebe ' + brl(t.total - fee) + '.' : ''); }
+  const chg = $('c-chg'); if (chg) { const r = parseMoney(val('c-recv')); chg.textContent = r ? (r >= t.total ? 'Troco: ' + brl(r - t.total) : 'Faltam ' + brl(t.total - r)) : ''; }
+  document.querySelectorAll('[data-lt]').forEach(el => { const l = c.items.find(x => x.vid === el.dataset.lt); if (l) el.textContent = brl(l.qty * l.price); });
+  renderBar();
+}
+
+/* recibo e detalhes da venda */
+function openSale(id, justDone) {
+  const s = D.sales.find(x => x.id === id); if (!s) return; S.sheet = { type: 'sale', id };
+  const items = '<div class="list" style="margin-top:0">' + s.items.map(i => '<div class="row"><div class="mid"><div class="t1">' + i.qty + 'x ' + esc(i.name) + '</div><div class="t2">' + esc(i.label || 'Única') + (i.sku ? ' · ' + esc(i.sku) : '') + '</div></div><span class="amt">' + brl(i.qty * i.price) + '</span></div>').join('') + '</div>';
+  const tot = '<div style="margin:14px 0">' + (s.disc ? '<div class="totline"><span>Subtotal</span><span>' + brl(s.sub) + '</span></div><div class="totline"><span>Desconto</span><span>− ' + brl(s.disc) + '</span></div>' : '') + '<div class="totline grand"><span>Total</span><span>' + brl(s.total) + '</span></div><div class="totline"><span>Pagamento</span><span>' + payLabel(s) + '</span></div>' + (s.status === 'ok' && can('costs') ? (() => { const k = saleCalc(s); return '<div class="totline"><span>Taxa da maquininha' + (s.feeBp ? ' (' + fmtPct(s.feeBp) + '%)' : '') + '</span><span>− ' + brl(k.fee) + '</span></div><div class="totline"><span>Custo dos produtos</span><span>− ' + brl(k.cost) + '</span></div><div class="totline grand"><span>Lucro</span><span>' + brl(k.profit) + '</span></div>'; })() : '') + (s.pay === 'dinheiro' && s.recv > 0 ? '<div class="totline"><span>Recebido</span><span>' + brl(s.recv) + '</span></div><div class="totline"><span>Troco</span><span>' + brl(s.change) + '</span></div>' : '') + (s.cust ? '<div class="totline"><span>Cliente</span><span>' + esc(s.cust) + '</span></div>' : '') + '</div>';
+  const wa = 'https://wa.me/?text=' + encodeURIComponent(receiptText(s));
+  sheetWrap(justDone ? 'Venda registrada' : 'Venda nº ' + s.n, 'Venda nº ' + s.n + ' · ' + fmtDate(s.ts) + ' ' + fmtTime(s.ts) + (s.status !== 'ok' ? ' · CANCELADA' : ''), items + tot,
+    '<button class="btn btn-primary" data-act="share" data-id="' + s.id + '">Compartilhar recibo</button><a class="btn" href="' + wa + '" target="_blank" rel="noopener">Enviar pelo WhatsApp</a>' + (s.status === 'ok' && !justDone ? armBtn('cancelSale', 'Cancelar venda e devolver ao estoque') : '') + '<button class="btn" data-act="close">' + (justDone ? 'Nova venda' : 'Fechar') + '</button>');
+}
+
+/* produto e variações */
+function openNewProduct(sku) {
+  S.sheet = { type: 'newp' };
+  sheetWrap('Novo produto', 'Depois de salvar você adiciona as outras variações.',
+    fld('Nome do produto', 'p-name', '<input id="p-name" maxlength="80" autocomplete="off">') + catField('') +
+    '<div class="sect" style="margin-top:4px">Primeira variação</div>' + fld('Variação (ex.: Preto / 36)', 'v-label', '<input id="v-label" maxlength="60" autocomplete="off">', 'Deixe em branco se o produto não tem variações.') +
+    fld('SKU', 'v-sku', '<div class="inrow"><input id="v-sku" maxlength="60" autocomplete="off" autocapitalize="characters" value="' + esc(sku || '') + '"><button class="btn" data-act="scanSku" aria-label="Ler SKU pelo QR Code">' + IC.cam + '</button></div>', 'É o código que está no QR Code da etiqueta.') +
+    '<div class="two">' + fld('Preço de venda', 'v-price', moneyIn('v-price', '')) + fld('Custo (opcional)', 'v-cost', moneyIn('v-cost', '')).replace('class="field"', 'class="field" data-need="costs"') + '</div><div class="two">' + fld('Estoque inicial', 'v-stock', numIn('v-stock', '')) + fld('Estoque mínimo', 'v-min', numIn('v-min', '', 'Opcional')) + '</div>',
+    '<button class="btn btn-primary" data-act="saveNewProduct">Salvar produto</button>' + cancelBtn);
+  setTimeout(() => { const e = $('p-name'); if (e) e.focus(); }, 30);
+}
+function saveNewProduct() {
+  const name = val('p-name').trim(); if (!name) { toast('Dê um nome ao produto.'); return; }
+  const sku = val('v-sku').trim(); if (sku && skuTaken(sku)) { toast('Já existe uma variação com esse SKU.'); return; }
+  const stock = val('v-stock') === '' ? 0 : toInt(val('v-stock')); if (isNaN(stock) || stock < 0) { toast('Estoque inicial inválido.'); return; }
+  const p = { id: uid(), name, cat: readCat(), variants: [] };
+  const v = { id: uid(), label: val('v-label').trim(), sku, price: parseMoney(val('v-price')), cost: parseMoney(val('v-cost')), stock: 0, min: Math.max(0, toInt(val('v-min')) || 0) };
+  p.variants.push(v); D.products.push(p); if (stock) moveStock(v, stock, 'inicial', '', ''); save(); render(); openProduct(p.id); toast('Produto criado.');
+}
+function openProduct(pid) {
+  const p = D.products.find(x => x.id === pid); if (!p) return; S.sheet = { type: 'product', pid };
+  const vs = p.variants.map(v => '<button class="row" data-act="editVariant" data-vid="' + v.id + '"><div class="mid"><div class="t1">' + esc(v.label || 'Única') + '</div><div class="t2">' + esc(v.sku || 'sem SKU') + ' ' + pill(stockState(v)) + '</div></div><span class="amt">' + brl(v.price || 0) + '<small>' + (v.stock || 0) + ' un.</small></span></button>').join('');
+  sheetWrap(p.name, plural(p.variants.length, 'variação', 'variações') + ' · ' + plural(totalStock(p), 'peça', 'peças'),
+    fld('Nome do produto', 'p-name', '<input id="p-name" maxlength="80" autocomplete="off" value="' + esc(p.name) + '">') + catField(p.cat || '') +
+    '<div class="sect" style="margin-top:4px">Variações</div>' + (vs ? '<div class="list" style="margin:0 0 12px">' + vs + '</div>' : '<p class="foot">Nenhuma variação. Adicione abaixo.</p>'),
+    '<button class="btn" data-act="newVariant">Nova variação</button><button class="btn" data-act="batch">Gerar variações em lote</button><button class="btn btn-primary" data-act="saveProduct">Salvar</button>' + armBtn('delProduct', 'Apagar produto') + '<button class="btn" data-act="close">Fechar</button>');
+}
+function saveProductFields() {
+  const sh = S.sheet; if (!sh || !$('p-name')) return true; const p = D.products.find(x => x.id === sh.pid); if (!p) return true;
+  const name = val('p-name').trim(); if (!name) { toast('O nome não pode ficar vazio.'); return false; }
+  p.name = name; p.cat = readCat(); save(); return true;
+}
+function openVariant(pid, vid, sku) {
+  const p = D.products.find(x => x.id === pid); if (!p) return; const v = vid ? p.variants.find(x => x.id === vid) : null;
+  S.sheet = { type: 'variant', pid, vid: vid || null };
+  sheetWrap(v ? 'Editar variação' : 'Nova variação', esc(p.name),
+    fld('Variação (ex.: Preto / 36)', 'v-label', '<input id="v-label" maxlength="60" autocomplete="off" value="' + esc(v ? v.label : '') + '">') +
+    fld('SKU', 'v-sku', '<div class="inrow"><input id="v-sku" maxlength="60" autocomplete="off" autocapitalize="characters" value="' + esc(v ? v.sku : sku || '') + '"><button class="btn" data-act="scanSku" aria-label="Ler SKU pelo QR Code">' + IC.cam + '</button></div>', 'É o código que está no QR Code da etiqueta.') +
+    '<div class="two">' + fld('Preço de venda', 'v-price', moneyIn('v-price', v && v.price ? fmtIn(v.price) : '')) + fld('Custo (opcional)', 'v-cost', moneyIn('v-cost', v && v.cost ? fmtIn(v.cost) : '')).replace('class="field"', 'class="field" data-need="costs"') + '</div>' +
+    '<div class="two">' + (v ? '<div class="field"><label>Estoque atual</label><div class="t1" style="padding:10px 0">' + (v.stock || 0) + ' un.</div></div>' : fld('Estoque inicial', 'v-stock', numIn('v-stock', ''))) + fld('Estoque mínimo', 'v-min', numIn('v-min', v && v.min ? v.min : '', 'Opcional')) + '</div>',
+    '<button class="btn btn-primary" data-act="saveVariant">Salvar variação</button>' + (v ? '<button class="btn" data-act="adjustFromV" data-vid="' + v.id + '">Ajustar estoque</button>' + armBtn('delVariant', 'Apagar variação') : '') + '<button class="btn" data-act="backProduct">Voltar ao produto</button>');
+}
+function saveVariant() {
+  const sh = S.sheet, p = D.products.find(x => x.id === sh.pid); if (!p) return;
+  const sku = val('v-sku').trim(); if (sku && skuTaken(sku, sh.vid)) { toast('Já existe uma variação com esse SKU.'); return; }
+  const fields = { label: val('v-label').trim(), sku, price: parseMoney(val('v-price')), cost: parseMoney(val('v-cost')), min: Math.max(0, toInt(val('v-min')) || 0) };
+  if (sh.vid) Object.assign(p.variants.find(x => x.id === sh.vid), fields);
+  else { const st = val('v-stock') === '' ? 0 : toInt(val('v-stock')); if (isNaN(st) || st < 0) { toast('Estoque inicial inválido.'); return; } const v = Object.assign({ id: uid(), stock: 0 }, fields); p.variants.push(v); if (st) moveStock(v, st, 'inicial', '', ''); }
+  save(); render(); openProduct(p.id); toast('Variação salva.');
+}
+function deleteVariant() {
+  const sh = S.sheet, p = D.products.find(x => x.id === sh.pid); if (!p) return;
+  p.variants = p.variants.filter(v => v.id !== sh.vid); S.cart.items = S.cart.items.filter(l => l.vid !== sh.vid); saveCart(); save(); render(); openProduct(p.id); toast('Variação apagada.');
+}
+function deleteProduct() {
+  const pid = S.sheet.pid, p = D.products.find(x => x.id === pid); if (!p) return; const ids = p.variants.map(v => v.id);
+  D.products = D.products.filter(x => x.id !== pid); S.cart.items = S.cart.items.filter(l => ids.indexOf(l.vid) < 0); saveCart(); save(); closeSheet(); render(); toast('Produto apagado. As vendas antigas continuam no histórico.');
+}
+const slug = s => norm(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+function openBatch(pid) {
+  const p = D.products.find(x => x.id === pid); if (!p) return; S.sheet = { type: 'batch', pid };
+  const pre = slug(p.name).slice(0, 4);
+  sheetWrap('Gerar variações em lote', esc(p.name) + ' · cria todas as combinações',
+    fld('Prefixo do SKU', 'b-pre', '<input id="b-pre" maxlength="20" autocapitalize="characters" autocomplete="off" value="' + esc(pre) + '">', 'O SKU fica assim: PREFIXO-PRETO-36. Você pode editar cada SKU depois para igualar ao QR Code já impresso.') +
+    '<div class="two">' + fld('Grupo 1 (ex.: Cor)', 'b-g1', '<input id="b-g1" maxlength="30" autocomplete="off" placeholder="Cor">') + fld('Valores', 'b-v1', '<input id="b-v1" autocomplete="off" placeholder="Preto, Rosa, Nude">') + '</div>' +
+    '<div class="two">' + fld('Grupo 2 (ex.: Tamanho)', 'b-g2', '<input id="b-g2" maxlength="30" autocomplete="off" placeholder="Tamanho">') + fld('Valores', 'b-v2', '<input id="b-v2" autocomplete="off" placeholder="34, 35, 36, 37">') + '</div>' +
+    '<p class="foot" id="b-count" style="margin:0 0 12px"></p><div class="two">' + fld('Preço de venda', 'b-price', moneyIn('b-price', '')) + fld('Custo (opcional)', 'b-cost', moneyIn('b-cost', '')).replace('class="field"', 'class="field" data-need="costs"') + '</div><div class="two">' + fld('Estoque de cada uma', 'b-stock', numIn('b-stock', '')) + fld('Estoque mínimo', 'b-min', numIn('b-min', '', 'Opcional')) + '</div>',
+    '<button class="btn btn-primary" data-act="saveBatch">Gerar variações</button><button class="btn" data-act="backProduct">Voltar ao produto</button>');
+}
+function batchCombos() {
+  const split = s => String(s).split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
+  const a = split(val('b-v1')), b = split(val('b-v2')); const out = [];
+  if (a.length && b.length) a.forEach(x => b.forEach(y => out.push([x, y]))); else (a.length ? a : b).forEach(x => out.push([x]));
+  return out;
+}
+function updateBatchCount() { const el = $('b-count'); if (!el) return; const n = batchCombos().length; el.textContent = n ? 'Serão criadas ' + plural(n, 'variação', 'variações') + '.' : 'Preencha os valores de pelo menos um grupo, separados por vírgula.'; }
+function saveBatch() {
+  const sh = S.sheet, p = D.products.find(x => x.id === sh.pid); if (!p) return;
+  const combos = batchCombos(); if (!combos.length) { toast('Preencha os valores de pelo menos um grupo.'); return; } if (combos.length > 500) { toast('O máximo é 500 combinações por vez.'); return; }
+  const pre = slug(val('b-pre')), price = parseMoney(val('b-price')), cost = parseMoney(val('b-cost')), st = val('b-stock') === '' ? 0 : toInt(val('b-stock')), min = Math.max(0, toInt(val('b-min')) || 0);
+  if (isNaN(st) || st < 0) { toast('Estoque inválido.'); return; }
+  let made = 0, skipped = 0;
+  combos.forEach(c => {
+    const sku = [pre].concat(c.map(slug)).filter(Boolean).join('-');
+    if (skuTaken(sku) || p.variants.some(v => norm(v.sku) === norm(sku))) { skipped++; return; }
+    const v = { id: uid(), label: c.join(' / '), sku, price, cost, stock: 0, min }; p.variants.push(v); idx = null; made++; if (st) moveStock(v, st, 'inicial', '', '');
+  });
+  save(); render(); openProduct(p.id); toast(plural(made, 'variação criada', 'variações criadas') + (skipped ? ' · ' + plural(skipped, 'ignorada (SKU repetido)', 'ignoradas (SKU repetido)') : '') + '.');
+}
+
+/* ajuste de estoque */
+function openAdjust(vid, mode, back) {
+  const h = index().byId.get(vid); if (!h) return; S.sheet = { type: 'adjust', vid, mode: mode || 'in', back: back || null }; renderAdjust();
+}
+function renderAdjust() {
+  const sh = S.sheet, h = index().byId.get(sh.vid); if (!h) return; const v = h.v;
+  const qty = val('a-qty'), note = val('a-note'); const mv = D.moves.filter(m => m.vid === v.id).slice(-5).reverse();
+  const lab = { in: 'Quantidade que entrou', out: 'Quantidade que saiu', set: 'Quantidade contada' }[sh.mode];
+  sheetWrap(vname(h.p, v), 'SKU ' + esc(v.sku || '—') + ' · estoque atual: <strong>' + (v.stock || 0) + '</strong>',
+    '<div class="seg" role="group" aria-label="Tipo de ajuste">' + [['in', 'Entrada'], ['out', 'Saída'], ['set', 'Contagem']].map(m => '<button data-act="amode" data-v="' + m[0] + '" aria-pressed="' + (sh.mode === m[0]) + '">' + m[1] + '</button>').join('') + '</div>' +
+    fld(lab, 'a-qty', numIn('a-qty', qty, '0')) + fld('Observação (opcional)', 'a-note', '<input id="a-note" maxlength="80" autocomplete="off" value="' + esc(note) + '">') +
+    (mv.length ? '<div class="sect" style="margin-top:0">Últimos movimentos</div><div class="list" style="margin:0 0 12px">' + mv.map(m => '<div class="row"><div class="mid"><div class="t1">' + (MT[m.type] || m.type) + '</div><div class="t2">' + fmtDate(m.ts) + ' ' + fmtTime(m.ts) + (m.note ? ' · ' + esc(m.note) : '') + '</div></div><span class="amt">' + (m.delta > 0 ? '+' : '') + m.delta + '<small>ficou ' + m.after + '</small></span></div>').join('') + '</div>' : ''),
+    '<button class="btn btn-primary" data-act="saveAdjust">Salvar ajuste</button><button class="btn" data-act="adjClose">' + (sh.back ? 'Voltar' : 'Cancelar') + '</button>');
+}
+function saveAdjust() {
+  const sh = S.sheet, h = index().byId.get(sh.vid); if (!h) return; const v = h.v, q = toInt(val('a-qty')), note = val('a-note').trim();
+  if (isNaN(q) || (sh.mode !== 'set' && q <= 0) || (sh.mode === 'set' && q < 0)) { toast('Informe uma quantidade válida.'); return; }
+  const delta = sh.mode === 'in' ? q : sh.mode === 'out' ? -q : q - (v.stock || 0);
+  if (delta === 0) { toast('O estoque já está em ' + (v.stock || 0) + '.'); return; }
+  moveStock(v, delta, sh.mode === 'in' ? 'entrada' : sh.mode === 'out' ? 'saida' : 'contagem', note, ''); save(); render();
+  if (sh.back) openProduct(h.p.id); else closeSheet(); toast('Estoque agora: ' + v.stock + '.');
+}
+
+/* contagem por QR */
+function openCount() {
+  const I = index(), ids = Object.keys(S.count).filter(id => I.byId.has(id)); S.sheet = { type: 'count' };
+  if (!ids.length) { closeSheet(); toast('Nenhum item lido.'); return; }
+  const rows = ids.map(id => { const h = I.byId.get(id), c = S.count[id], d = c - (h.v.stock || 0); return '<div class="row"><div class="mid"><div class="t1">' + esc(vname(h.p, h.v)) + '</div><div class="t2">Sistema: ' + (h.v.stock || 0) + ' · ' + (d === 0 ? 'confere' : (d > 0 ? 'sobra ' : 'falta ') + Math.abs(d)) + '</div></div><input data-cnt="' + id + '" type="number" inputmode="numeric" value="' + c + '" style="width:84px;text-align:right" aria-label="Quantidade contada"></div>'; }).join('');
+  sheetWrap('Conferir contagem', plural(ids.length, 'variação lida', 'variações lidas') + ' · só estas serão atualizadas', '<div class="list" style="margin:0 0 12px">' + rows + '</div>',
+    '<button class="btn btn-primary" data-act="applyCount">Aplicar contagem ao estoque</button><button class="btn" data-act="scanCount">Continuar lendo</button>' + armBtn('dropCount', 'Descartar contagem') + '<button class="btn" data-act="close">Fechar sem aplicar</button>');
+}
+function applyCount() {
+  document.querySelectorAll('input[data-cnt]').forEach(el => { const n = toInt(el.value); if (!isNaN(n) && n >= 0) S.count[el.dataset.cnt] = n; });
+  const I = index(); let n = 0;
+  Object.keys(S.count).forEach(id => { const h = I.byId.get(id); if (!h) return; const d = S.count[id] - (h.v.stock || 0); if (d !== 0) { moveStock(h.v, d, 'contagem', 'Contagem por QR', ''); n++; } });
+  S.count = {}; save(); closeSheet(); render(); toast(n ? plural(n, 'variação ajustada', 'variações ajustadas') + '.' : 'Tudo conferia com o sistema.');
+}
+
+/* ---------- leitor de QR ---------- */
+const sc = { on: false, stream: null, video: null, det: null, canvas: null, ctx: null, t: 0, mode: '', last: '', lastT: 0, undo: [], cb: null, actx: null, track: null, torch: false, ins: 0 };
+function beep(ok) {
+  try { if (navigator.vibrate) navigator.vibrate(ok ? 50 : [60, 60, 60]); } catch (e) {}
+  try { if (!sc.actx) return; const o = sc.actx.createOscillator(), g = sc.actx.createGain(); o.frequency.value = ok ? 880 : 200; g.gain.value = 0.08; o.connect(g); g.connect(sc.actx.destination); o.start(); o.stop(sc.actx.currentTime + (ok ? 0.08 : 0.25)); } catch (e) {}
+}
+function scanTitle() {
+  if (sc.mode === 'sale') { const t = totals(); return 'Vendendo · ' + plural(t.q, 'item', 'itens') + ' · ' + brl(t.total); }
+  if (sc.mode === 'in') return 'Entrada de estoque · ' + plural(sc.ins, 'peça', 'peças'); if (sc.mode === 'count') return 'Contagem · ' + plural(Object.values(S.count).reduce((a, b) => a + b, 0), 'peça lida', 'peças lidas');
+  return 'Ler SKU';
+}
+function setMsg(html, bad) { const m = $('smsg'); if (m) { m.className = 'smsg' + (bad ? ' bad' : ''); m.innerHTML = html; } const t = $('stitle'); if (t) t.textContent = scanTitle(); }
+async function openScan(mode, cb) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Este navegador não deixa usar a câmera aqui. Abra o app pelo endereço https ou instale-o.'); return; }
+  Object.assign(sc, { mode, cb: cb || null, last: '', lastT: 0, undo: [], ins: 0 });
+  try { sc.actx = sc.actx || new (window.AudioContext || window.webkitAudioContext)(); if (sc.actx.state === 'suspended') sc.actx.resume(); } catch (e) {}
+  const box = $('scan'); box.hidden = false;
+  box.innerHTML = '<video id="sv" playsinline muted autoplay></video><div class="reticle"></div><div class="scantop"><div class="scantitle" id="stitle"></div><button class="btn btn-sm" data-act="scanClose">Concluir</button></div><div class="scanbottom"><div class="smsg" id="smsg">Aponte a câmera para o QR Code</div><div class="srow">' + (mode === 'sale' || mode === 'in' ? '<button class="btn btn-sm" data-act="scanUndo">Desfazer o último</button>' : '') + '<button class="btn btn-sm" id="torch" data-act="torch" hidden>Lanterna</button></div></div>';
+  setMsg('Aponte a câmera para o QR Code');
+  try { sc.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); }
+  catch (e) {
+    box.hidden = true; box.innerHTML = '';
+    toast(e && e.name === 'NotAllowedError' ? 'Permita o uso da câmera nas configurações do navegador e tente de novo.' : e && e.name === 'NotFoundError' ? 'Nenhuma câmera encontrada neste aparelho.' : 'Não foi possível abrir a câmera.'); return;
+  }
+  sc.video = $('sv'); sc.video.srcObject = sc.stream; try { await sc.video.play(); } catch (e) {}
+  sc.track = sc.stream.getVideoTracks()[0]; try { const caps = sc.track.getCapabilities && sc.track.getCapabilities(); if (caps && caps.torch) $('torch').hidden = false; } catch (e) {}
+  sc.torch = false; sc.det = null;
+  if ('BarcodeDetector' in window) { try { const fm = await window.BarcodeDetector.getSupportedFormats(); if (fm.indexOf('qr_code') >= 0) sc.det = new window.BarcodeDetector({ formats: ['qr_code', 'ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e'].filter(f => fm.indexOf(f) >= 0) }); } catch (e) {} }
+  if (!sc.det && !window.jsQR) { toast('O leitor de QR Code não carregou. Abra o app com internet uma vez.'); }
+  sc.canvas = document.createElement('canvas'); sc.ctx = sc.canvas.getContext('2d', { willReadFrequently: true }); sc.on = true; tick();
+}
+async function tick() {
+  if (!sc.on) return; const v = sc.video;
+  if (v && v.readyState >= 2 && v.videoWidth) {
+    try {
+      let code = '';
+      if (sc.det) { const r = await sc.det.detect(v); if (r && r[0]) code = r[0].rawValue; }
+      else if (window.jsQR) { const w = Math.min(640, v.videoWidth), h = Math.round(v.videoHeight * w / v.videoWidth); sc.canvas.width = w; sc.canvas.height = h; sc.ctx.drawImage(v, 0, 0, w, h); const im = sc.ctx.getImageData(0, 0, w, h), r = window.jsQR(im.data, w, h, { inversionAttempts: 'dontInvert' }); if (r) code = r.data; }
+      if (code && sc.on) onCode(code);
+    } catch (e) {}
+  }
+  if (sc.on) sc.t = setTimeout(tick, 110);
+}
+function onCode(raw) {
+  const now = Date.now(); if (raw === sc.last && now - sc.lastT < 700) { sc.lastT = now; return; } sc.last = raw; sc.lastT = now;
+  if (sc.mode === 'sku') { const cb = sc.cb; beep(true); closeScan(true); if (cb) cb(raw); return; }
+  const h = resolveCode(raw);
+  if (!h) { beep(false); setMsg('SKU não cadastrado<small>' + esc(raw.slice(0, 80)) + '</small><button class="btn btn-sm" style="margin-top:8px" data-act="regSku" data-sku="' + esc(raw.slice(0, 60)) + '">Cadastrar este SKU</button>', true); return; }
+  const v = h.v, nm = esc(vname(h.p, v));
+  if (sc.mode === 'sale') { const q = addCart(v.id, 1); sc.undo.push(v.id); beep(true); renderBar(); setMsg('✓ ' + nm + '<small>' + brl(v.price || 0) + ' · ' + q + ' no carrinho' + (q > (v.stock || 0) ? ' · <b>estoque do sistema: ' + (v.stock || 0) + '</b>' : '') + '</small>'); }
+  else if (sc.mode === 'in') { moveStock(v, 1, 'entrada', 'Entrada por QR', ''); save(); sc.undo.push(v.id); sc.ins++; beep(true); setMsg('✓ ' + nm + '<small>estoque agora: ' + v.stock + '</small>'); }
+  else if (sc.mode === 'count') { S.count[v.id] = (S.count[v.id] || 0) + 1; beep(true); setMsg('✓ ' + nm + '<small>contados: ' + S.count[v.id] + ' · sistema: ' + (v.stock || 0) + '</small>'); }
+}
+function undoScan() {
+  const vid = sc.undo.pop(); if (!vid) { toast('Nada para desfazer.'); return; } const h = index().byId.get(vid); if (!h) return;
+  if (sc.mode === 'sale') { const q = addCart(vid, -1); renderBar(); setMsg('Removido: ' + esc(vname(h.p, h.v)) + '<small>' + q + ' no carrinho</small>'); }
+  else if (sc.mode === 'in') { moveStock(h.v, -1, 'saida', 'Desfeito', ''); save(); sc.ins = Math.max(0, sc.ins - 1); setMsg('Desfeito: ' + esc(vname(h.p, h.v)) + '<small>estoque agora: ' + h.v.stock + '</small>'); }
+  sc.lastT = Date.now();
+}
+async function toggleTorch() { try { sc.torch = !sc.torch; await sc.track.applyConstraints({ advanced: [{ torch: sc.torch }] }); } catch (e) { sc.torch = false; toast('A lanterna não está disponível.'); } }
+function closeScan(silent) {
+  sc.on = false; clearTimeout(sc.t); try { if (sc.stream) sc.stream.getTracks().forEach(t => t.stop()); } catch (e) {} sc.stream = null; sc.track = null;
+  const box = $('scan'); box.hidden = true; box.innerHTML = ''; const mode = sc.mode; if (silent) return;
+  if (mode === 'count') { render(); openCount(); } else { render(); if (mode === 'sale' && cartLines().length) openCart(); }
+}
+
+/* ---------- planilhas (CSV) ---------- */
+function parseCSV(text) {
+  text = String(text).replace(/^﻿/, ''); const first = text.split(/\r?\n/)[0] || ''; const d = (first.match(/;/g) || []).length >= (first.match(/,/g) || []).length ? ';' : ',';
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"') q = true; else if (ch === d) { row.push(cur); cur = ''; } else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); cur = ''; if (row.some(x => x.trim() !== '')) rows.push(row); row = []; } else cur += ch;
+  }
+  row.push(cur); if (row.some(x => x.trim() !== '')) rows.push(row); return rows;
+}
+const HDR = { product: ['produto', 'nome', 'nome do produto', 'item', 'name'], label: ['variacao', 'variante', 'modelo'], color: ['cor'], size: ['tamanho', 'tam', 'medida'], sku: ['sku', 'codigo', 'cod', 'codigo sku', 'codigo do produto'], price: ['preco', 'preco de venda', 'valor', 'venda', 'valor de venda'], cost: ['custo', 'preco de custo', 'valor de custo'], stock: ['estoque', 'quantidade', 'qtd', 'saldo', 'estoque atual'], cat: ['categoria', 'grupo'], min: ['minimo', 'estoque minimo', 'min'] };
+function planImport(rows) {
+  if (rows.length < 2) return { err: 'A planilha está vazia ou só tem o cabeçalho.' };
+  const head = rows[0].map(norm), col = {}; Object.keys(HDR).forEach(k => { const i = head.findIndex(h => HDR[k].indexOf(h) >= 0); if (i >= 0) col[k] = i; });
+  if (col.product == null) return { err: 'Não achei a coluna “Produto” na primeira linha. Use a planilha modelo.' };
+  const cell = (r, k) => col[k] == null ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim();
+  const plan = { newP: new Set(), newV: 0, upd: 0, skip: 0, noSku: 0, rows: [] }, seenSku = new Set(), nameMap = new Map(D.products.map(p => [norm(p.name), p]));
+  rows.slice(1).forEach(r => {
+    const name = cell(r, 'product'); if (!name) { plan.skip++; return; }
+    const label = [cell(r, 'label'), cell(r, 'color'), cell(r, 'size')].filter(Boolean).join(' / '), sku = cell(r, 'sku');
+    if (sku && seenSku.has(norm(sku))) { plan.skip++; return; } if (sku) seenSku.add(norm(sku)); else plan.noSku++;
+    const hit = sku ? index().bySku.get(norm(sku)) : null; const item = { name, label, sku, price: parseMoney(cell(r, 'price')), cost: parseMoney(cell(r, 'cost')), stock: cell(r, 'stock') === '' ? null : toInt(cell(r, 'stock')), min: cell(r, 'min') === '' ? null : toInt(cell(r, 'min')), cat: cell(r, 'cat'), upd: !!hit };
+    if (item.stock != null && isNaN(item.stock)) item.stock = null;
+    if (hit) plan.upd++; else { plan.newV++; if (!nameMap.has(norm(name))) plan.newP.add(norm(name)); }
+    plan.rows.push(item);
+  });
+  return plan;
+}
+function impCard() {
+  const p = S.imp; if (p.err) return '<section class="card"><h2>Não foi possível importar</h2><p class="hint">' + esc(p.err) + '</p><div class="btnrow"><button class="btn" data-act="impCancel">Ok</button></div></section>';
+  return '<section class="card"><h2>Conferir importação</h2><p class="hint">Nada foi gravado ainda.</p><div class="totline"><span>Produtos novos</span><strong>' + p.newP.size + '</strong></div><div class="totline"><span>Variações novas</span><strong>' + p.newV + '</strong></div><div class="totline"><span>Variações atualizadas (SKU já existe)</span><strong>' + p.upd + '</strong></div><div class="totline"><span>Linhas ignoradas</span><strong>' + p.skip + '</strong></div>' + (p.noSku ? '<p class="foot">' + plural(p.noSku, 'linha está', 'linhas estão') + ' sem SKU e não poderão ser lidas pelo QR Code.</p>' : '') + '<p class="foot">Nas linhas atualizadas, o estoque da planilha substitui o do app.</p><div class="btnrow" style="margin-top:12px"><button class="btn btn-primary" data-act="impApply">Importar agora</button><button class="btn" data-act="impCancel">Cancelar</button></div></section>';
+}
+function applyImportCsv() {
+  const plan = S.imp; if (!plan || plan.err) return; let np = 0, nv = 0, nu = 0;
+  plan.rows.forEach(it => {
+    const hit = it.sku ? index().bySku.get(norm(it.sku)) : null;
+    if (hit) { const v = hit.v; if (it.label) v.label = it.label; if (it.price) v.price = it.price; if (it.cost) v.cost = it.cost; if (it.min != null) v.min = Math.max(0, it.min); if (it.cat) hit.p.cat = addCat(it.cat); if (it.stock != null && it.stock !== (v.stock || 0)) moveStock(v, it.stock - (v.stock || 0), 'importacao', 'Planilha', ''); nu++; idx = null; return; }
+    let p = D.products.find(x => norm(x.name) === norm(it.name));
+    if (!p) { p = { id: uid(), name: it.name, cat: it.cat ? addCat(it.cat) : '', variants: [] }; D.products.push(p); np++; } else if (it.cat && !p.cat) p.cat = addCat(it.cat);
+    const v = { id: uid(), label: it.label, sku: it.sku, price: it.price, cost: it.cost, stock: 0, min: Math.max(0, it.min || 0) }; p.variants.push(v); if (it.stock) moveStock(v, it.stock, 'importacao', 'Planilha', ''); nv++; idx = null;
+  });
+  S.imp = null; save(); render(); toast(plural(np, 'produto novo', 'produtos novos') + ', ' + plural(nv, 'variação nova', 'variações novas') + ', ' + plural(nu, 'atualizada', 'atualizadas') + '.');
+}
+async function readText(file) {
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { return new TextDecoder('windows-1252').decode(buf); }
+}
+const csvCell = v => { v = String(v == null ? '' : v); return /[;"\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+function download(name, text, type) {
+  const blob = new Blob([text], { type: type || 'text/csv;charset=utf-8' }), url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+const csvOut = rows => '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n') + '\r\n';
+function csvTemplate() { download('modelo-produtos.csv', csvOut([['Produto', 'Variação', 'SKU', 'Preço', 'Custo', 'Estoque', 'Categoria', 'Mínimo'], ['EXEMPLO - apague esta linha', 'Preto / 36', 'EX-PRETO-36', '89,90', '40,00', '5', 'Exemplo', '2'], ['EXEMPLO - apague esta linha', 'Preto / 37', 'EX-PRETO-37', '89,90', '40,00', '3', 'Exemplo', '2']])); }
+function csvStock() { const r = [['Produto', 'Variação', 'SKU', 'Preço', 'Custo', 'Estoque', 'Categoria', 'Mínimo']]; D.products.forEach(p => p.variants.forEach(v => r.push([p.name, v.label, v.sku, fmtIn(v.price || 0), fmtIn(v.cost || 0), v.stock || 0, p.cat || '', v.min || 0]))); download('estoque-' + dayKey(Date.now()) + '.csv', csvOut(r)); }
+function csvSales() {
+  const r = [['Venda', 'Data', 'Hora', 'Produto', 'Variação', 'SKU', 'Quantidade', 'Preço unitário', 'Valor do item (com desconto)', 'Custo unitário', 'Custo total', 'Taxa da maquininha (R$)', 'Lucro', 'Pagamento', 'Taxa (%)', 'Cliente', 'Situação', 'Categoria']];
+  D.sales.forEach(s => { const L = saleLines(s), ok = s.status === 'ok'; L.forEach(x => r.push([s.n, fmtDate(s.ts), fmtTime(s.ts), x.i.name, x.i.label, x.i.sku, x.i.qty, fmtIn(x.i.price), fmtIn(ok ? x.net : 0), fmtIn(x.i.cost || 0), fmtIn(ok ? x.cost : 0), fmtIn(ok ? x.fee : 0), fmtIn(ok ? x.profit : 0), payLabel(s), s.feeBp ? fmtPct(s.feeBp) : '0,00', s.cust, ok ? 'Concluída' : 'Cancelada', catOfItem(x.i)])); });
+  download('vendas-' + dayKey(Date.now()) + '.csv', csvOut(r));
+}
+function csvReport() {
+  const test = periodTest(), ok = D.sales.filter(s => test(s.ts) && s.status === 'ok'), rr = reportRows(ok);
+  const r = [['Produto', 'Categoria', 'Variação', 'SKU', 'Quantidade vendida', 'Vendas (com desconto)', 'Custo dos produtos', 'Taxa da maquininha', 'Lucro', 'Margem (%)', 'Custo cadastrado']];
+  let q = 0, v = 0, c = 0, f = 0, l = 0;
+  rr.forEach(x => { q += x.q; v += x.rev; c += x.cost; f += x.fee; l += x.profit; r.push([x.name, x.cat, x.label, x.sku, x.q, fmtIn(x.rev), fmtIn(x.cost), fmtIn(x.fee), fmtIn(x.profit), x.rev > 0 ? (x.profit / x.rev * 100).toFixed(1).replace('.', ',') : '', x.nocost ? 'não' : 'sim']); });
+  r.push(['TOTAL', '', '', '', q, fmtIn(v), fmtIn(c), fmtIn(f), fmtIn(l), v > 0 ? (l / v * 100).toFixed(1).replace('.', ',') : '', '']);
+  download('relatorio-' + S.period + '-' + dayKey(Date.now()) + '.csv', csvOut(r));
+}
+
+/* ---------- backup ---------- */
+function payload() { return JSON.stringify({ app: 'meu-pdv', v: 1, exportedAt: new Date().toISOString(), store: D.store, products: D.products, sales: D.sales, moves: D.moves, seq: D.seq }); }
+function parseBackup(text) {
+  let o; try { o = JSON.parse(String(text).trim()); } catch (e) { return null; }
+  if (!o || typeof o !== 'object' || !Array.isArray(o.products) || !Array.isArray(o.sales)) return null; return o;
+}
+function stageBackup(text) {
+  const o = parseBackup(text); if (!o) { toast('Esse conteúdo não é um backup do Meu PDV.'); return; }
+  if (!D.products.length && !D.sales.length) { applyBackup(o); return; } S.pendBk = o; render();
+}
+function applyBackup(o) { applyData(o); D.moves.forEach(m => { delete m.q; }); S.pendBk = null; S.cart = { items: [], disc: '', dtype: 'val', pay: 'dinheiro', recv: '', cust: '', note: '', inst: 1 }; saveCart(); save(); render(); toast('Backup restaurado: ' + plural(D.products.length, 'produto', 'produtos') + ' e ' + plural(D.sales.length, 'venda', 'vendas') + '.'); }
+function doExport() { download('meu-pdv-' + dayKey(Date.now()) + '.json', payload(), 'application/json'); try { localStorage.setItem('pdv:bk', dayKey(Date.now())); } catch (e) {} render(); toast('Backup gerado. Guarde o arquivo em um lugar seguro.'); }
+
+/* ---------- eventos ---------- */
+const ARM = { cancelSale: () => cancelSale(S.sheet.id), delProduct: deleteProduct, delVariant: deleteVariant, dropCount: () => { S.count = {}; closeSheet(); toast('Contagem descartada.'); } };
+document.addEventListener('click', ev => {
+  const t = ev.target.closest('[data-act]'); if (!t) return; const a = t.dataset.act, ds = t.dataset;
+  const need = ACTPERM[a]; if (need && !can(need)) { toast('Você não tem permissão para isso.'); return; }
+  if (a === 'tab' && !tabAllowed(ds.v)) return;
+  if (ARM[a]) { if (t.dataset.armed) ARM[a](); else { t.dataset.armed = '1'; t.textContent = 'Toque de novo para confirmar'; } return; }
+  switch (a) {
+    case 'tab': S.tab = ds.v; S.lim = 60; render(); window.scrollTo(0, 0); break;
+    case 'gomais': S.tab = 'mais'; render(); window.scrollTo(0, 0); break;
+    case 'limmore': S.lim += 60; if (S.tab === 'vendas') render(); else refreshList(); break;
+    case 'addCat': { const n = addCat(val('c-new')); if (!n) { toast('Digite o nome da categoria.'); break; } save(); render(); toast('Categoria “' + n + '” adicionada.'); break; }
+    case 'delCat': { const c = ds.v, n = D.products.filter(p => norm(p.cat) === norm(c)).length; if (n) { toast('Há ' + plural(n, 'produto', 'produtos') + ' nessa categoria. Mude a categoria deles antes de remover.'); break; } D.store.cats = D.store.cats.filter(x => norm(x) !== norm(c)); save(); render(); toast('Categoria removida.'); break; }
+    case 'catf': S.cat = ds.v; S.lim = 60; render(); break;
+    case 'sf': S.sf = ds.v; S.lim = 60; render(); break;
+    case 'period': S.period = ds.v; S.lim = 60; render(); break;
+    case 'pick': openPick(ds.id); break;
+    case 'addv': { const q = addCart(ds.vid, 1); renderBar(); toast('Adicionado · ' + q + ' no carrinho'); break; }
+    case 'vinc': addCart(ds.vid, 1); refreshPick(); break;
+    case 'vdec': addCart(ds.vid, -1); refreshPick(); break;
+    case 'cart': openCart(); break;
+    case 'cinc': addCart(ds.vid, 1); renderCart(); break;
+    case 'cdec': addCart(ds.vid, -1); renderCart(); break;
+    case 'inst': collectCart(); S.cart.inst = +ds.v; saveCart(); renderCart(); break;
+    case 'dtype': collectCart(); S.cart.dtype = ds.v; renderCart(); break;
+    case 'pay': collectCart(); S.cart.pay = ds.v; saveCart(); renderCart(); break;
+    case 'clearCart': if (t.dataset.armed) { newSaleReset(); closeSheet(); render(); toast('Carrinho esvaziado.'); } else { t.dataset.armed = '1'; t.textContent = 'Toque de novo para esvaziar'; } break;
+    case 'finish': finishSale(); break;
+    case 'sale': openSale(ds.id, false); break;
+    case 'share': shareReceipt(ds.id); break;
+    case 'newProduct': openNewProduct(); break;
+    case 'saveNewProduct': saveNewProduct(); break;
+    case 'editProduct': openProduct(ds.id); break;
+    case 'saveProduct': if (saveProductFields()) { closeSheet(); render(); toast('Produto salvo.'); } break;
+    case 'newVariant': if (saveProductFields()) openVariant(S.sheet.pid, null); break;
+    case 'editVariant': if (saveProductFields()) openVariant(S.sheet.pid, ds.vid); break;
+    case 'saveVariant': saveVariant(); break;
+    case 'backProduct': openProduct(S.sheet.pid); break;
+    case 'batch': if (saveProductFields()) { openBatch(S.sheet.pid); updateBatchCount(); } break;
+    case 'saveBatch': saveBatch(); break;
+    case 'adjust': openAdjust(ds.vid, 'in'); break;
+    case 'adjustFromV': { const pid = S.sheet.pid; openAdjust(ds.vid, 'in', pid); break; }
+    case 'amode': S.sheet.mode = ds.v; renderAdjust(); break;
+    case 'saveAdjust': saveAdjust(); break;
+    case 'adjClose': if (S.sheet.back) openProduct(S.sheet.back); else closeSheet(); break;
+    case 'scanSale': openScan('sale'); break;
+    case 'scanIn': openScan('in'); break;
+    case 'scanCount': closeSheet(); openScan('count'); break;
+    case 'scanSku': openScan('sku', code => { const el = $('v-sku'); if (el) el.value = code.trim(); }); break;
+    case 'scanClose': closeScan(); break;
+    case 'scanUndo': undoScan(); break;
+    case 'torch': toggleTorch(); break;
+    case 'regSku': { const sku = ds.sku; closeScan(true); render(); openNewProduct(sku); break; }
+    case 'applyCount': applyCount(); break;
+    case 'saveFees': { const f = {}; FEEKEYS.forEach(k => { const b = parsePct(val('f-' + k[0])); if (b) f[k[0]] = b; }); D.store.fees = f; save(); render(); toast('Taxas salvas. Valem para as próximas vendas.'); break; }
+    case 'csvReport': csvReport(); break;
+    case 'saveStore': D.store.name = val('s-name').trim(); D.store.footer = val('s-foot').trim(); save(); render(); toast('Dados da loja salvos.'); break;
+    case 'csvPick': $('f-csv').click(); break;
+    case 'csvTemplate': csvTemplate(); break;
+    case 'csvStock': csvStock(); break;
+    case 'csvSales': csvSales(); break;
+    case 'impApply': applyImportCsv(); break;
+    case 'impCancel': S.imp = null; render(); break;
+    case 'bkExport': doExport(); break;
+    case 'bkFile': $('f-backup').click(); break;
+    case 'bkPaste': stageBackup(val('bk-text')); break;
+    case 'bkApply': if (S.pendBk) applyBackup(S.pendBk); break;
+    case 'bkCancel': S.pendBk = null; render(); break;
+    case 'close': if (S.sheet && S.sheet.type === 'cloudchoice') break; closeSheet(); render(); break;
+    case 'gLogin': window.PDVCloud.signIn().catch(e => toast('Não foi possível entrar (' + ((e && (e.code || e.message)) || 'erro') + ').')); break;
+    case 'gLogout': if (t.dataset.armed) { cloudStop(); window.PDVCloud.signOut(); } else { t.dataset.armed = '1'; t.textContent = 'Toque de novo para sair'; } break;
+    case 'gLogoutNow': cloudStop(); window.PDVCloud.signOut(); break;
+    case 'gRetry': CL.err = ''; CL.started = false; CL.gate = ''; if (CL.user) cloudStart(); break;
+    case 'cloudUse': cloudUse(); break;
+    case 'cloudCancel': cloudCancel(); break;
+  }
+});
+document.addEventListener('input', ev => {
+  const t = ev.target;
+  if (t.id === 'q') { S.qs[S.tab] = t.value; S.lim = 60; refreshList(); }
+  else if (t.id === 'vq') refreshPick();
+  else if (t.id === 'b-v1' || t.id === 'b-v2') updateBatchCount();
+  else if (t.id === 'c-disc' || t.id === 'c-recv' || t.dataset.lp) { collectCart(); updateCartTotals(); }
+});
+document.addEventListener('change', async ev => {
+  const t = ev.target;
+  if (t.dataset.memrole) { setMemberRole(t.dataset.memrole, t.value); return; }
+  if ((t.id === 'f-backup' && !can('config')) || (t.id === 'f-csv' && !can('products'))) { t.value = ''; toast('Você não tem permissão para isso.'); return; }
+  if (t.id === 'f-backup' && t.files && t.files[0]) { const f = t.files[0]; t.value = ''; try { stageBackup(await readText(f)); } catch (e) { toast('Não foi possível ler o arquivo.'); } }
+  else if (t.id === 'f-csv' && t.files && t.files[0]) { const f = t.files[0]; t.value = ''; try { S.imp = planImport(parseCSV(await readText(f))); } catch (e) { S.imp = { err: 'Não foi possível ler o arquivo.' }; } render(); window.scrollTo(0, 0); }
+  else if (t.dataset.cnt) { const n = toInt(t.value); if (!isNaN(n) && n >= 0) S.count[t.dataset.cnt] = n; }
+});
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape') { if (sc.on) closeScan(); else if (S.sheet) { closeSheet(); render(); } }
+  if (ev.key === 'Enter' && ev.target && ev.target.id === 'q' && S.tab === 'caixa') {
+    const h = resolveCode(ev.target.value); if (h) { const q = addCart(h.v.id, 1); renderBar(); toast(vname(h.p, h.v) + ' · ' + q + ' no carrinho'); ev.target.value = ''; S.qs.caixa = ''; refreshList(); }
+  }
+});
+window.addEventListener('online', () => { render(); }); window.addEventListener('offline', () => { render(); });
+/* ---------- nuvem: login com Google e sincronização (Firebase) ---------- */
+const CL = { on: false, user: null, uid: '', ready: false, started: false, pending: 0, err: '', stockMap: {}, sig: { p: {}, s: {}, st: '' }, unsubs: [], first: {}, timer: null, choice: false, me: null, authKnown: false, gate: '', members: [], munsubs: [], mw: false, live: false };
+const STORE = 'stores/main', MEM = STORE + '/members/', SK = 'main';
+
+/* ---------- funções e permissões ---------- */
+const PERM_LIST = ['sell', 'discount', 'products', 'stock', 'costs', 'cancel', 'reports', 'config', 'users'];
+const ROLES = {
+  dono: { label: 'Dono', perms: PERM_LIST.slice() },
+  gerente: { label: 'Gerente', perms: ['sell', 'discount', 'products', 'stock', 'costs', 'cancel', 'reports'] },
+  vendedor: { label: 'Vendedor', perms: ['sell'] },
+  estoquista: { label: 'Estoquista', perms: ['products', 'stock', 'costs'] }
+};
+const ROLE_DESC = { dono: 'Tudo, inclusive taxas, backup e liberar pessoas.', gerente: 'Vende, cadastra produtos, mexe no estoque, cancela vendas, vê relatórios, custos e lucro.', vendedor: 'Só vende (sem desconto) e consulta produtos e estoque. Não vê custo nem lucro.', estoquista: 'Cadastra produtos e mexe no estoque, vendo os custos. Não vende e não vê relatórios.' };
+const roleLabel = r => ROLES[r] ? ROLES[r].label : r === 'pendente' ? 'Aguardando liberação' : 'Sem acesso';
+const permsOf = r => { const o = {}; PERM_LIST.forEach(k => { o[k] = !!(ROLES[r] && ROLES[r].perms.indexOf(k) >= 0); }); return o; };
+const can = k => !hasCfg() || (!!CL.me && CL.me.active === true && !!(CL.me.perms && CL.me.perms[k]));
+const ACTPERM = {
+  newProduct: 'products', saveNewProduct: 'products', editProduct: 'products', saveProduct: 'products', newVariant: 'products', editVariant: 'products', saveVariant: 'products', batch: 'products', saveBatch: 'products', backProduct: 'products', regSku: 'products', csvPick: 'products', impApply: 'products', delProduct: 'products', delVariant: 'products',
+  adjust: 'stock', adjustFromV: 'stock', amode: 'stock', saveAdjust: 'stock', scanIn: 'stock', scanCount: 'stock', applyCount: 'stock', dropCount: 'stock',
+  scanSale: 'sell', pick: 'sell', addv: 'sell', vinc: 'sell', vdec: 'sell', cart: 'sell', cinc: 'sell', cdec: 'sell', inst: 'sell', dtype: 'sell', pay: 'sell', clearCart: 'sell', finish: 'sell',
+  cancelSale: 'cancel', sale: 'reports', csvSales: 'costs', csvReport: 'costs', csvStock: 'costs',
+  saveFees: 'config', saveStore: 'config', bkExport: 'config', bkFile: 'config', bkPaste: 'config', bkApply: 'config', bkCancel: 'config'
+};
+const tabAllowed = t => t === 'caixa' ? can('sell') : t === 'vendas' ? can('reports') : true;
+function applyPerms() {
+  if (!hasCfg()) return;
+  document.querySelectorAll('[data-act]').forEach(el => {
+    const need = ACTPERM[el.dataset.act]; if (!need) return; const ok = can(need);
+    if (el.classList.contains('row')) el.disabled = !ok; else el.hidden = !ok;
+  });
+  document.querySelectorAll('[data-need]').forEach(el => { el.hidden = !can(el.dataset.need); });
+}
+let permTimer = 0;
+function schedulePerms() { if (permTimer) return; permTimer = requestAnimationFrame(() => { permTimer = 0; applyPerms(); }); }
+
+const DELSIG = 'deleted';
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+function h32(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36) + s.length.toString(36); }
+function stable(o) {
+  if (Array.isArray(o)) return '[' + o.map(stable).join(',') + ']';
+  if (o && typeof o === 'object') return '{' + Object.keys(o).sort().filter(k => o[k] !== undefined).map(k => JSON.stringify(k) + ':' + stable(o[k])).join(',') + '}';
+  return JSON.stringify(o);
+}
+const sigOf = o => h32(stable(o));
+const clone = o => JSON.parse(JSON.stringify(o));
+const prodDoc = p => { const d = clone(p); d.variants = (d.variants || []).map(v => { delete v.stock; return v; }); return d; };
+const storeDoc = () => clone({ name: D.store.name || '', footer: D.store.footer || '', fees: D.store.fees || {}, cats: D.store.cats || [] });
+const hasCfg = () => !!(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.PDVCloud);
+const cloudOn = () => CL.on && !!CL.user;
+function cloudPersist() { if (!CL.uid) return; lsSet('pdv:sig:' + SK, JSON.stringify(CL.sig)); lsSet('pdv:smap:' + SK, JSON.stringify(CL.stockMap)); }
+function cloudLabel() {
+  if (!CL.on || !CL.user) return navigator.onLine === false ? 'Sem internet · tudo funciona' : 'Salvo só neste aparelho';
+  const r = CL.me && CL.me.active ? ' · ' + roleLabel(CL.me.role) : '';
+  if (CL.err) return 'Erro de sincronização';
+  if (CL.choice) return 'Aguardando sua escolha';
+  if (navigator.onLine === false) return 'Sem internet · será enviado depois' + r;
+  if (!CL.ready) return 'Conectando…' + r;
+  return (CL.pending > 0 ? 'Enviando…' : '● Sincronizado') + r;
+}
+function updateHeader() { const el = $('hnote'); if (el) el.textContent = cloudLabel(); }
+function safeRender() {
+  const ae = document.activeElement;
+  if (CL.gate || !CL.user && hasCfg()) { S.stale = false; render(); return; }
+  if (S.sheet || !$('scan').hidden || (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))) { S.stale = true; updateHeader(); return; }
+  S.stale = false; render();
+}
+function cloudError(err) {
+  const c = err && (err.code || err.message) || 'erro';
+  CL.err = /permission-denied/.test(c) ? 'O banco de dados recusou o acesso (regras do Firestore). Confira o passo a passo.' : /unavailable|network/.test(c) ? '' : 'Não foi possível sincronizar (' + c + ').';
+  updateHeader(); if (CL.err && S.tab === 'mais') safeRender();
+}
+function cloudInit() {
+  if (CL.on || !hasCfg()) return;
+  try { window.PDVCloud.init(window.FIREBASE_CONFIG); CL.on = true; } catch (e) { CL.err = 'Configuração do Firebase inválida.'; CL.authKnown = true; render(); return; }
+  window.PDVCloud.onAuth(u => {
+    CL.authKnown = true;
+    if (u) { CL.user = u; cloudStart(); } else { cloudStop(); CL.user = null; CL.uid = ''; render(); }
+  });
+  setTimeout(() => { if (!CL.authKnown) { CL.authKnown = true; render(); } }, 5000);
+  window.addEventListener('online', updateHeader); window.addEventListener('offline', updateHeader);
+}
+function stopStore() { CL.unsubs.forEach(f => { try { f(); } catch (e) {} }); CL.unsubs = []; CL.ready = false; clearTimeout(CL.timer); }
+function cloudStop() {
+  stopStore(); CL.munsubs.forEach(f => { try { f(); } catch (e) {} }); CL.munsubs = [];
+  CL.mw = false; CL.members = []; CL.me = null; CL.gate = ''; CL.started = false; CL.live = false; CL.choice = false;
+}
+const withTimeout = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
+const codeOf = e => String(e && (e.code || e.message) || '');
+function setMe(m) { CL.me = m; if (CL.uid) lsSet('pdv:me:' + CL.uid, JSON.stringify(m)); }
+async function cloudJoin() {
+  const u = CL.user, uid = CL.uid, T = window.PDVCloud.TS, base = { email: u.email || '', name: u.name || '', at: Date.now(), u: T };
+  const own = Object.assign({}, base, { role: 'dono', active: true, perms: permsOf('dono') });
+  try { await withTimeout(window.PDVCloud.write([{ path: MEM + uid, data: own }]), 12000); return Object.assign({}, own, { u: 0 }); }
+  catch (e) { if (!/permission-denied/.test(codeOf(e))) { CL.err = 'Sem conexão para criar o seu acesso. Conecte à internet e tente de novo.'; CL.started = false; CL.gate = 'error'; safeRender(); return null; } }
+  const pend = Object.assign({}, base, { role: 'pendente', active: false, perms: permsOf('pendente') });
+  try { await withTimeout(window.PDVCloud.write([{ path: MEM + uid, data: pend }]), 12000); return Object.assign({}, pend, { u: 0 }); }
+  catch (e) { CL.err = 'Não foi possível pedir acesso (' + codeOf(e) + ').'; CL.started = false; CL.gate = 'error'; safeRender(); return null; }
+}
+async function cloudStart() {
+  const uid = CL.user.uid; if (CL.started && CL.uid === uid) return;
+  CL.started = true; CL.uid = uid; CL.ready = false; CL.err = ''; CL.me = null; CL.gate = 'checking'; CL.live = false; safeRender();
+  let me;
+  try { me = await withTimeout(window.PDVCloud.getFresh(MEM + uid), 9000); } catch (e) { me = undefined; }
+  if (me === undefined) { try { me = JSON.parse(lsGet('pdv:me:' + uid) || 'null') || undefined; } catch (e) { me = undefined; } }
+  if (me === undefined) { CL.err = 'Sem conexão para conferir o seu acesso. Conecte à internet e entre de novo.'; CL.started = false; CL.gate = 'error'; safeRender(); return; }
+  if (me === null) { me = await cloudJoin(); if (!me) return; }
+  CL.munsubs.push(window.PDVCloud.watchDoc(MEM + uid, onMyMember, e => { if (!/permission-denied/.test(codeOf(e))) cloudError(e); }));
+  onMyMember(me);
+}
+function onMyMember(m) {
+  if (!CL.user) return;
+  if (!m) { setMeNull(); return; }
+  setMe(m);
+  if (m.active === true) { CL.gate = ''; if (!CL.live) { CL.live = true; cloudActive(); } else { ensureMembersWatch(); safeRender(); } }
+  else { stopStore(); CL.live = false; CL.gate = m.role === 'pendente' ? 'pending' : 'blocked'; safeRender(); }
+}
+function setMeNull() { stopStore(); CL.me = null; CL.live = false; CL.gate = 'blocked'; safeRender(); }
+async function cloudActive() {
+  const uid = CL.uid; CL.err = ''; ensureMembersWatch();
+  const linked = lsGet('pdv:link') === SK, hasLocal = D.products.length > 0 || D.sales.length > 0;
+  let init;
+  try { init = await window.PDVCloud.get(STORE + '/meta/init'); } catch (e) { init = undefined; }
+  if (init === undefined && !linked) { CL.err = 'Sem conexão para conferir a loja. Conecte à internet e entre de novo.'; CL.live = false; CL.gate = 'error'; safeRender(); return; }
+  if (init === null && !can('config')) { CL.live = false; CL.gate = 'empty'; safeRender(); return; }
+  if (init && !linked && hasLocal) { CL.choice = true; safeRender(); openCloudChoice(); updateHeader(); return; }
+  cloudBegin(uid, !init && init !== undefined);
+}
+function ensureMembersWatch() {
+  if (CL.mw || !can('users')) return; CL.mw = true;
+  CL.munsubs.push(window.PDVCloud.watchCol(STORE + '/members', list => { CL.members = list.map(x => Object.assign({ uid: x.id }, x.data)); const nav = $('nav'); if (nav) nav.innerHTML = navHtml(); if (S.tab === 'mais') safeRender(); }, () => {}));
+}
+function openCloudChoice() {
+  S.sheet = { type: 'cloudchoice' };
+  sheetWrap('Esta conta já tem dados', 'Nuvem × este aparelho', '<p class="hint">A conta do Google que você usou já tem produtos e vendas na nuvem, e este aparelho também tem os seus. Para não misturar dois cadastros, escolha um.</p><p class="hint">Se usar a nuvem, o app baixa antes um arquivo de backup dos dados deste aparelho, para você não perder nada.</p>',
+    '<button class="btn btn-primary" data-act="cloudUse">Usar os dados da nuvem</button><button class="btn" data-act="cloudCancel">Cancelar e sair da conta</button>');
+}
+function cloudUse() {
+  try { doExport(); } catch (e) {}
+  applyData({ store: {}, products: [], sales: [], moves: [], seq: 0 });
+  S.cart = { items: [], disc: '', dtype: 'val', pay: 'dinheiro', recv: '', cust: '', note: '', inst: 1 }; saveCart(); saveLocal();
+  ['products', 'sales', 'moves', 'stock', 'meta'].forEach(c => lsSet('pdv:u:' + SK + ':' + c, '0'));
+  lsSet('pdv:sig:' + SK, ''); lsSet('pdv:smap:' + SK, '');
+  CL.choice = false; closeSheet(); cloudBegin(CL.uid, false);
+}
+function cloudCancel() { CL.choice = false; CL.started = false; closeSheet(); window.PDVCloud.signOut(); }
+function cloudBegin(uid, isNew) {
+  lsSet('pdv:link', SK);
+  let sg = null, sm = null;
+  try { sg = JSON.parse(lsGet('pdv:sig:' + SK) || 'null'); } catch (e) {}
+  try { sm = JSON.parse(lsGet('pdv:smap:' + SK) || 'null'); } catch (e) {}
+  CL.sig = sg && sg.p ? sg : { p: {}, s: {}, st: '' }; CL.stockMap = sm || {};
+  if (isNew) { CL.sig = { p: {}, s: {}, st: '' }; CL.stockMap = {}; D.moves.forEach(m => { delete m.q; }); saveLocal(); }
+  const base = STORE;
+  CL.first = {}; CL.ready = false;
+  ['stock', 'products', 'sales', 'moves', 'meta'].forEach(col => {
+    const since = (+lsGet('pdv:u:' + SK + ':' + col) || 0) - 5000;
+    CL.unsubs.push(window.PDVCloud.listen(base + '/' + col, since, (list, m) => onRemote(col, list, m), cloudError));
+  });
+  CL.timer = setTimeout(() => { if (!CL.ready) markReady(true); }, 7000);
+  if (isNew) window.PDVCloud.write([{ path: base + '/meta/init', data: { at: Date.now(), u: window.PDVCloud.TS } }]).catch(cloudError);
+  updateHeader(); safeRender();
+}
+function markReady(force) {
+  if (CL.ready) return;
+  if (!force && !['stock', 'products', 'sales', 'moves', 'meta'].every(c => CL.first[c])) return;
+  CL.ready = true; clearTimeout(CL.timer); cloudPush(); updateHeader(); safeRender();
+}
+function onRemote(col, list, meta) {
+  const uid = CL.uid; if (!uid || !CL.user) return;
+  let maxU = 0, ch = false;
+  list.forEach(({ id, data: x, pending }) => {
+    if (!x || pending) return;
+    if (x.u) maxU = Math.max(maxU, x.u);
+    if (col === 'stock') ch = remoteStock(id, x) || ch;
+    else if (col === 'products') ch = remoteProduct(id, x) || ch;
+    else if (col === 'sales') ch = remoteSale(id, x) || ch;
+    else if (col === 'moves') ch = remoteMove(id, x) || ch;
+    else if (col === 'meta' && id === 'store') ch = remoteStore(x) || ch;
+  });
+  if (maxU) { const k = 'pdv:u:' + SK + ':' + col; if (maxU > (+lsGet(k) || 0)) lsSet(k, String(maxU)); }
+  if (!meta.fromCache || navigator.onLine === false) CL.first[col] = true;
+  if (ch) { idx = null; saveLocal(); cloudPersist(); }
+  if (!CL.ready) markReady(false); else if (ch) safeRender();
+}
+function remoteStock(id, x) {
+  const n = +x.n || 0, h = index().byId.get(id), unsent = h ? (h.v.stock || 0) - (CL.stockMap[id] || 0) : 0;
+  CL.stockMap[id] = n;
+  if (h && h.v.stock !== n + unsent) { h.v.stock = n + unsent; return true; }
+  return false;
+}
+function remoteProduct(id, x) {
+  const i = D.products.findIndex(p => p.id === id), cur = D.products[i];
+  if (cur && CL.sig.p[id] !== sigOf(prodDoc(cur))) return false;
+  if (x.del) { if (i >= 0) D.products.splice(i, 1); CL.sig.p[id] = DELSIG; return i >= 0; }
+  const old = new Map((cur ? cur.variants : []).map(v => [v.id, v]));
+  const p = Object.assign({}, x); delete p.u; delete p.del;
+  p.variants = (x.variants || []).map(v => Object.assign({}, v, { stock: CL.stockMap[v.id] != null ? CL.stockMap[v.id] : (old.has(v.id) ? old.get(v.id).stock || 0 : 0) }));
+  if (i >= 0) D.products[i] = p; else D.products.push(p);
+  CL.sig.p[id] = sigOf(prodDoc(p)); return true;
+}
+function remoteSale(id, x) {
+  const i = D.sales.findIndex(s => s.id === id), cur = D.sales[i];
+  if (cur && CL.sig.s[id] !== sigOf(clone(cur))) return false;
+  if (x.del) { if (i >= 0) D.sales.splice(i, 1); CL.sig.s[id] = DELSIG; return i >= 0; }
+  const s = Object.assign({}, x); delete s.u;
+  if (i >= 0) D.sales[i] = s; else { D.sales.push(s); D.sales.sort((a, b) => a.ts - b.ts); }
+  D.seq = Math.max(D.seq || 0, s.n || 0); CL.sig.s[id] = sigOf(clone(s)); return true;
+}
+function remoteMove(id, x) {
+  if (D.moves.some(m => m.id === id)) return false;
+  const m = Object.assign({}, x); delete m.u; m.q = true; D.moves.push(m); D.moves.sort((a, b) => a.ts - b.ts); return true;
+}
+function remoteStore(x) {
+  if (CL.sig.st && CL.sig.st !== sigOf(storeDoc())) return false;
+  D.store.name = x.name || ''; D.store.footer = x.footer || ''; D.store.fees = x.fees || {}; if (Array.isArray(x.cats)) D.store.cats = x.cats.filter(c => typeof c === 'string' && c.trim()); CL.sig.st = sigOf(storeDoc()); return true;
+}
+function cloudPush() {
+  if (!cloudOn() || !CL.ready) return;
+  const base = STORE, T = window.PDVCloud.TS, ops = [];
+  const pids = new Set(D.products.map(p => p.id));
+  const cP = can('products'), cS = can('sell') || can('cancel'), cC = can('config'), cT = can('sell') || can('stock') || can('products') || can('cancel');
+  if (cP) D.products.forEach(p => { const d = prodDoc(p), sg = sigOf(d); if (CL.sig.p[p.id] !== sg) { ops.push({ path: base + '/products/' + p.id, data: Object.assign({}, d, { u: T }) }); CL.sig.p[p.id] = sg; } });
+  if (cP) Object.keys(CL.sig.p).forEach(id => { if (!pids.has(id) && CL.sig.p[id] !== DELSIG) { ops.push({ path: base + '/products/' + id, data: { id, del: true, u: T } }); CL.sig.p[id] = DELSIG; } });
+  const sids = new Set(D.sales.map(s => s.id));
+  if (cS) D.sales.forEach(s => { const d = clone(s), sg = sigOf(d); if (CL.sig.s[s.id] !== sg) { ops.push({ path: base + '/sales/' + s.id, data: Object.assign({}, d, { u: T }) }); CL.sig.s[s.id] = sg; } });
+  if (cS) Object.keys(CL.sig.s).forEach(id => { if (!sids.has(id) && CL.sig.s[id] !== DELSIG) { ops.push({ path: base + '/sales/' + id, data: { id, del: true, u: T } }); CL.sig.s[id] = DELSIG; } });
+  const ssg = sigOf(storeDoc()); if (cC && CL.sig.st !== ssg) { ops.push({ path: base + '/meta/store', data: Object.assign(storeDoc(), { u: T }) }); CL.sig.st = ssg; }
+  if (cT) D.moves.forEach(m => { if (!m.q) { const d = clone(m); delete d.q; ops.push({ path: base + '/moves/' + m.id, data: Object.assign(d, { u: T }) }); m.q = true; } });
+  if (cT) D.products.forEach(p => p.variants.forEach(v => {
+    const cur = v.stock || 0, diff = cur - (CL.stockMap[v.id] || 0);
+    if (diff !== 0) { ops.push({ path: base + '/stock/' + v.id, data: { n: window.PDVCloud.inc(diff), u: T }, merge: true }); CL.stockMap[v.id] = cur; }
+  }));
+  if (!ops.length) return;
+  cloudPersist(); try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (e) {}
+  for (let i = 0; i < ops.length; i += 400) {
+    CL.pending++; updateHeader();
+    window.PDVCloud.write(ops.slice(i, i + 400)).then(() => { CL.pending--; CL.err = ''; updateHeader(); if (CL.pending === 0 && S.tab === 'mais') safeRender(); }).catch(e => { CL.pending--; cloudError(e); });
+  }
+}
+function contaCard() {
+  let h = '<section class="card"><h2>Conta e sincronização</h2>';
+  if (!hasCfg()) return h + '<p class="hint">Para abrir seus dados também no computador e liberar outras pessoas, a nuvem precisa ser ligada: edite o arquivo <strong>firebase-config.js</strong> com os dados do seu projeto no Firebase (passo a passo na conversa). Enquanto isso, tudo fica salvo só neste aparelho.</p></section>';
+  if (!CL.user) return h + '<p class="hint">Entre com sua conta Google.</p><div class="btnrow"><button class="btn btn-primary" data-act="gLogin">Entrar com Google</button></div></section>';
+  return h + '<p class="hint">Conectado como <strong>' + esc(CL.user.email || CL.user.name) + '</strong>' + (CL.me ? ' · ' + esc(roleLabel(CL.me.role)) : '') + '.</p><p class="foot">' + esc(cloudLabel()) + '. Vendas e cadastros feitos sem internet são enviados quando a conexão voltar.</p>' + (CL.err ? '<p class="foot warnt">' + esc(CL.err) + '</p>' : '') + '<div class="btnrow"><button class="btn btn-danger" data-act="gLogout">Sair da conta</button></div></section>';
+}
+function pessoasCard() {
+  if (!hasCfg() || !can('users')) return '';
+  const L = CL.members.slice().sort((a, b) => ((b.role === 'pendente') - (a.role === 'pendente')) || String(a.email).localeCompare(String(b.email)));
+  const opts = r => ROLE_ORDER.map(k => '<option value="' + k + '"' + (r === k ? ' selected' : '') + '>' + ROLES[k].label + '</option>').join('') + '<option value="bloqueado"' + (r === 'bloqueado' ? ' selected' : '') + '>Sem acesso</option>';
+  let h = '<section class="card"><h2>Pessoas com acesso</h2><p class="hint">Peça para a pessoa abrir o app e entrar com o Google dela. Ela aparece aqui como “Aguardando”; escolha a função para liberar.</p>';
+  h += L.length ? '<div class="list" style="margin-top:0">' + L.map(m => {
+    const me = m.uid === CL.uid, pend = m.role === 'pendente';
+    return '<div class="row"><div class="mid"><div class="t1" style="overflow-wrap:anywhere">' + esc(m.name || m.email || m.uid) + (me ? ' (você)' : '') + (pend ? ' <span class="pill crit">Aguardando</span>' : m.active ? '' : ' <span class="pill">Sem acesso</span>') + '</div><div class="t2" style="overflow-wrap:anywhere">' + esc(m.email || '') + '</div></div>' +
+      (me ? '<span class="amt" style="font-size:14px">Dono</span>' : '<select class="rsel" data-memrole="' + esc(m.uid) + '" aria-label="Função de ' + esc(m.email || m.name) + '">' + (pend ? '<option value="pendente" selected>Escolha…</option>' : '') + opts(pend ? '' : (m.active ? m.role : 'bloqueado')) + '</select>') + '</div>';
+  }).join('') + '</div>' : '<p class="foot">Só você por enquanto.</p>';
+  h += '<p class="foot">' + ROLE_ORDER.map(k => '<strong>' + ROLES[k].label + ':</strong> ' + ROLE_DESC[k]).join('<br>') + '</p></section>';
+  return h;
+}
+const ROLE_ORDER = ['dono', 'gerente', 'vendedor', 'estoquista'];
+function setMemberRole(uid, role) {
+  if (!can('users') || uid === CL.uid || role === 'pendente') return;
+  const active = !!ROLES[role], T = window.PDVCloud.TS;
+  window.PDVCloud.write([{ path: MEM + uid, merge: true, data: { role, active, perms: permsOf(role), u: T } }]).then(() => toast(active ? 'Função salva: ' + roleLabel(role) + '.' : 'Acesso removido.')).catch(cloudError);
+}
+function gateHtml() {
+  if (!hasCfg()) return '';
+  const box = (title, body, btns) => '<div class="gate"><img class="gate-mark" src="logo.png" alt="DancEra Store"><h1>' + title + '</h1>' + body + (btns ? '<div class="btnrow" style="justify-content:center">' + btns + '</div>' : '') + '</div>';
+  const out = '<button class="btn" data-act="gLogoutNow">Sair da conta</button>';
+  const err = CL.err ? '<p class="foot warnt">' + esc(CL.err) + '</p>' : '';
+  if (!CL.authKnown) return box('Abrindo…', '', '');
+  if (!CL.user) return box(esc(D.store.name || 'Meu PDV'), '<p class="hint">Entre com a sua conta Google para abrir a loja.</p>' + err + ((D.products.length || D.sales.length) ? '<p class="foot">Os produtos e vendas que já estão neste aparelho ficam guardados e podem ser enviados à nuvem ao entrar.</p>' : ''), '<button class="btn btn-primary btn-big" data-act="gLogin">Entrar com Google</button>');
+  const who = '<p class="foot">Conta: <strong>' + esc(CL.user.email || CL.user.name) + '</strong></p>';
+  if (CL.gate === 'checking') return box('Conferindo seu acesso…', '', '');
+  if (CL.gate === 'pending') return box('Aguardando liberação', '<p class="hint">O dono da loja ainda precisa liberar o seu acesso. Avise a pessoa para abrir <strong>Mais → Pessoas com acesso</strong> e escolher a sua função. Esta tela muda sozinha quando for liberado.</p>' + who, out);
+  if (CL.gate === 'blocked') return box('Sem acesso', '<p class="hint">O seu acesso a esta loja foi removido ou ainda não existe. Fale com o dono da loja.</p>' + who, out);
+  if (CL.gate === 'empty') return box('Loja ainda não configurada', '<p class="hint">O dono da loja precisa entrar primeiro para cadastrar os produtos. Depois toque em “Tentar de novo”.</p>' + who, '<button class="btn btn-primary" data-act="gRetry">Tentar de novo</button>' + out);
+  if (CL.gate === 'error') return box('Não foi possível entrar', '<p class="hint">' + esc(CL.err || 'Erro desconhecido.') + '</p>' + who, '<button class="btn btn-primary" data-act="gRetry">Tentar de novo</button>' + out);
+  return '';
+}
+
+window.addEventListener('load', cloudInit);
+window.__pdv = { D, S, onCode, sc, CL, cloudPush, save };
+
+load(); render();
+try { new MutationObserver(schedulePerms).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+</script>
+</body>
+</html>
