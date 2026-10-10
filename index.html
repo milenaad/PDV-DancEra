@@ -89,6 +89,9 @@ textarea { min-height: 100px; resize: vertical; }
 .pill.crit::before { background: var(--crit); }
 .pill.ok::before { background: var(--okc); }
 .warnt { color: var(--danger); font-weight: 600; }
+.skunote { margin: -4px 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--teal-soft); font-size: 13.5px; overflow-wrap: anywhere; }
+.skunote.bad { background: #fdecec; }
+.skunote .btnrow { margin-top: 8px; }
 .empty { text-align: center; padding: 26px 8px; color: var(--ink2); }
 .empty h2 { font-family: var(--display); font-size: 20px; color: var(--ink); margin: 0 0 6px; }
 .empty p { margin: 0 0 14px; }
@@ -339,6 +342,49 @@ function index() {
 }
 const vname = (p, v) => p.name + (v.label ? ' · ' + v.label : '');
 function skuTaken(sku, exceptVid) { const k = norm(sku); if (!k) return false; const h = index().bySku.get(k); return !!(h && h.v.id !== exceptVid); }
+/* família do SKU: a parte maior do código é a estampa (CB-VIDACURTA-G → VIDACURTA; MOLROTBALLET-OFFP → MOLROTBALLET) */
+function skuBase(sku) {
+  const parts = norm(sku).toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); if (parts.length < 2) return '';
+  let b = ''; parts.forEach(x => { if (x.length > b.length) b = x; }); return b.length >= 4 ? b : '';
+}
+function skuFamily(sku, exceptPid) {
+  const b = skuBase(sku); if (!b) return null; const list = [];
+  D.products.forEach(p => { if (p.id === exceptPid) return; const vs = p.variants.filter(v => skuBase(v.sku) === b); if (vs.length) list.push({ p, vs }); });
+  if (!list.length) return null; list.sort((a, c) => c.vs.length - a.vs.length);
+  return { base: b, p: list[0].p, vs: list[0].vs };
+}
+/* devolve a família de OUTRO produto quando o SKU parece pertencer a ele (pid = produto aberto, se houver) */
+function famWarn(sku, pid, vid) {
+  const f = skuFamily(sku, pid); if (!f) return null;
+  if (pid) { const own = D.products.find(x => x.id === pid); if (own && own.variants.some(v => v.id !== vid && skuBase(v.sku) === f.base)) return null; }
+  return f;
+}
+function closestSibling(vs, sku) {
+  const s = norm(sku); let best = null, bl = -1;
+  vs.forEach(v => { const t = norm(v.sku); let i = 0; while (i < s.length && i < t.length && s[i] === t[i]) i++; if (i > bl) { bl = i; best = v; } });
+  return best;
+}
+function skuNotice(sku, pid, vid, force) {
+  const s = String(sku || '').trim(); if (!s) return '';
+  const h = index().bySku.get(norm(s));
+  if (h && h.v.id !== vid) return '<div class="skunote bad">Este SKU já está cadastrado em <strong>' + esc(vname(h.p, h.v)) + '</strong> (estoque: ' + (h.v.stock || 0) + ').<div class="btnrow"><button class="btn btn-sm btn-primary" data-act="skuIn" data-vid="' + h.v.id + '">Dar entrada no estoque</button><button class="btn btn-sm" data-act="skuOpenV" data-vid="' + h.v.id + '">Abrir variação</button></div></div>';
+  const f = famWarn(s, pid, vid); if (!f) return '';
+  const txt = (pid ? 'Este SKU parece ser do produto ' : 'Parece ser uma variação de ') + '<strong>' + esc(f.p.name) + '</strong>: ' + plural(f.vs.length, 'variação já cadastrada', 'variações já cadastradas') + ' com “' + esc(f.base) + '” no SKU.';
+  const btns = (vid ? '' : '<button class="btn btn-sm btn-primary" data-act="skuAddTo" data-pid="' + f.p.id + '">Adicionar como variação de ' + esc(f.p.name) + '</button>') +
+    (force ? '<button class="btn btn-sm" data-act="skuForce">' + (pid ? 'Salvar neste produto mesmo assim' : 'Criar produto separado mesmo assim') + '</button>' : '');
+  return '<div class="skunote">' + txt + (btns ? '<div class="btnrow">' + btns + '</div>' : '') + '</div>';
+}
+function updSkuNote(force) { const el = $('skunote'), sh = S.sheet; if (!el || !sh) return; el.innerHTML = skuNotice(val('v-sku'), sh.type === 'variant' ? sh.pid : null, sh.vid || null, force); if (force && el.innerHTML) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+const formKeep = () => ({ label: val('v-label'), price: val('v-price'), cost: val('v-cost'), stock: val('v-stock'), min: val('v-min') });
+/* depois de ler o QR dentro do formulário: se já existe, abre direto */
+function skuAfterScan(code) {
+  const sh = S.sheet; if (!sh || (sh.type !== 'newp' && sh.type !== 'variant')) return;
+  const sku = String(code || '').trim(), h = index().bySku.get(norm(sku));
+  if (h && h.v.id !== sh.vid) { openAdjust(h.v.id, 'in', h.p.id); toast('Esse QR Code já está cadastrado: ' + vname(h.p, h.v) + '. Informe a entrada.'); return; }
+  const f = !sh.vid && famWarn(sku, sh.type === 'variant' ? sh.pid : null, null);
+  if (f) { openVariant(f.p.id, null, sku, formKeep()); toast('Já existe o produto ' + f.p.name + '. Abrindo para adicionar esta variação.'); return; }
+  updSkuNote();
+}
 function moveStock(v, delta, type, note, ref) {
   v.stock = (v.stock || 0) + delta;
   D.moves.push({ id: uid(), ts: Date.now(), vid: v.id, delta, type, note: note || '', ref: ref || '', after: v.stock });
@@ -353,7 +399,11 @@ function resolveCode(raw) {
     try { h = I.bySku.get(norm(decodeURIComponent(t))); if (h) return h; } catch (e) {}
   }
   const ns = norm(s); let best = null;
-  I.bySku.forEach((hit, k) => { if (k.length >= 4 && ns.indexOf(k) >= 0 && (!best || k.length > best.k.length)) best = { k, hit }; });
+  const an = c => !!c && /[a-z0-9]/.test(c);
+  I.bySku.forEach((hit, k) => {
+    if (k.length < 4 || (best && k.length <= best.k.length)) return;
+    for (let i = ns.indexOf(k); i >= 0; i = ns.indexOf(k, i + 1)) if (!an(ns[i - 1]) && !an(ns[i + k.length])) { best = { k, hit }; break; }
+  });
   return best ? best.hit : null;
 }
 function stockState(v) {
@@ -657,15 +707,47 @@ function render() {
   if (gate) { S.sheet = null; $('sheet').innerHTML = ''; $('app').innerHTML = gate; $('nav').innerHTML = ''; $('cartbar').innerHTML = ''; schedulePerms(); return; }
   if (!tabAllowed(S.tab)) S.tab = ['caixa', 'produtos', 'estoque', 'vendas', 'mais'].find(tabAllowed);
   const app = $('app'), body = S.tab === 'caixa' ? caixa() : S.tab === 'produtos' ? produtos() : S.tab === 'estoque' ? estoque() : S.tab === 'vendas' ? vendas() : mais();
-  app.innerHTML = header() + body; $('nav').innerHTML = navHtml(); renderBar(); schedulePerms(); maybeEvPrompt();
+  app.innerHTML = header() + body; $('nav').innerHTML = navHtml(); renderBar(); schedulePerms(); maybeEvPrompt(); guardLater();
 }
 function refreshList() { const l = $('list'); if (l) l.innerHTML = S.tab === 'estoque' ? stockRows() : prodRows(S.qs[S.tab], S.tab); }
 
 /* ---------- janelas ---------- */
 function sheetWrap(title, sub, body, actions) {
   $('sheet').innerHTML = '<div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(title) + '"><h2>' + esc(title) + '</h2>' + (sub ? '<div class="ctxtag">' + sub + '</div>' : '') + body + '<div class="actions">' + actions + '</div></div>';
+  guardLater();
 }
-function closeSheet() { S.sheet = null; $('sheet').innerHTML = ''; }
+function closeSheet() { S.sheet = null; $('sheet').innerHTML = ''; guardLater(); }
+
+/* ---------- botão voltar do celular: fecha a janela aberta em vez de sair do app ---------- */
+const NAV = { ign: 0, t: 0 };
+const homeTab = () => ['caixa', 'produtos', 'estoque', 'vendas', 'mais'].find(tabAllowed) || 'caixa';
+const atRoot = () => !sc.on && !S.sheet && (S.tab === homeTab() || !$('nav').innerHTML);
+const guarded = () => !!(history.state && history.state.pdv);
+function guardLater() { clearTimeout(NAV.t); NAV.t = setTimeout(syncGuard, 0); }
+function syncGuard() {
+  if (NAV.ign) return;
+  try {
+    if (!atRoot()) { if (!guarded()) history.pushState({ pdv: 1 }, ''); }
+    else if (guarded()) { NAV.ign++; history.back(); }
+  } catch (e) {}
+}
+function goBack() {
+  if (sc.on) { closeScan(); return true; }
+  const sh = S.sheet;
+  if (sh) {
+    if (sh.type === 'cloudchoice') return true;
+    if (sh.type === 'event') S.evAsked = true;
+    if ((sh.type === 'variant' || sh.type === 'batch') && D.products.some(p => p.id === sh.pid)) { openProduct(sh.pid); return true; }
+    if (sh.type === 'adjust' && sh.back && D.products.some(p => p.id === sh.back)) { openProduct(sh.back); return true; }
+    closeSheet(); render(); return true;
+  }
+  if ($('nav').innerHTML && S.tab !== homeTab()) { S.tab = homeTab(); S.lim = 60; render(); window.scrollTo(0, 0); return true; }
+  return false;
+}
+window.addEventListener('popstate', () => {
+  if (NAV.ign) { NAV.ign--; syncGuard(); return; }
+  goBack(); syncGuard();
+});
 function fld(label, id, inner, tip) { return '<div class="field"><label for="' + id + '">' + label + '</label>' + inner + (tip ? '<span class="tip">' + tip + '</span>' : '') + '</div>'; }
 function moneyIn(id, v) { return '<div class="money-in"><span>R$</span><input id="' + id + '" inputmode="decimal" autocomplete="off" placeholder="0,00" value="' + esc(v || '') + '"></div>'; }
 function numIn(id, v, ph) { return '<input id="' + id + '" type="number" inputmode="numeric" step="1" placeholder="' + (ph || '0') + '" value="' + esc(v == null ? '' : v) + '">'; }
@@ -737,14 +819,15 @@ function openNewProduct(sku) {
   sheetWrap('Novo produto', 'Depois de salvar você adiciona as outras variações.',
     fld('Nome do produto', 'p-name', '<input id="p-name" maxlength="80" autocomplete="off">') + catField('') +
     '<div class="sect" style="margin-top:4px">Primeira variação</div>' + fld('Variação (ex.: Preto / 36)', 'v-label', '<input id="v-label" maxlength="60" autocomplete="off">', 'Deixe em branco se o produto não tem variações.') +
-    fld('SKU', 'v-sku', '<div class="inrow"><input id="v-sku" maxlength="60" autocomplete="off" autocapitalize="characters" value="' + esc(sku || '') + '"><button class="btn" data-act="scanSku" aria-label="Ler SKU pelo QR Code">' + IC.cam + '</button></div>', 'É o código que está no QR Code da etiqueta.') +
+    fld('SKU', 'v-sku', '<div class="inrow"><input id="v-sku" maxlength="60" autocomplete="off" autocapitalize="characters" value="' + esc(sku || '') + '"><button class="btn" data-act="scanSku" aria-label="Ler SKU pelo QR Code">' + IC.cam + '</button></div>', 'É o código que está no QR Code da etiqueta.') + '<div id="skunote"></div>' +
     '<div class="two">' + fld('Preço de venda', 'v-price', moneyIn('v-price', '')) + fld('Custo (opcional)', 'v-cost', moneyIn('v-cost', '')).replace('class="field"', 'class="field" data-need="costs"') + '</div><div class="two">' + fld('Estoque inicial', 'v-stock', numIn('v-stock', '')) + fld('Estoque mínimo', 'v-min', numIn('v-min', '', 'Opcional')) + '</div>',
     '<button class="btn btn-primary" data-act="saveNewProduct">Salvar produto</button>' + cancelBtn);
-  setTimeout(() => { const e = $('p-name'); if (e) e.focus(); }, 30);
+  updSkuNote(); setTimeout(() => { const e = $('p-name'); if (e) e.focus(); }, 30);
 }
 function saveNewProduct() {
   const name = val('p-name').trim(); if (!name) { toast('Dê um nome ao produto.'); return; }
-  const sku = val('v-sku').trim(); if (sku && skuTaken(sku)) { toast('Já existe uma variação com esse SKU.'); return; }
+  const sku = val('v-sku').trim(); if (sku && skuTaken(sku)) { updSkuNote(); toast('Já existe uma variação com esse SKU.'); return; }
+  if (sku && !S.sheet.force && famWarn(sku)) { updSkuNote(true); toast('Esse SKU parece ser de um produto já cadastrado.'); return; }
   const stock = val('v-stock') === '' ? 0 : toInt(val('v-stock')); if (isNaN(stock) || stock < 0) { toast('Estoque inicial inválido.'); return; }
   const p = { id: uid(), name, cat: readCat(), variants: [] };
   const v = { id: uid(), label: val('v-label').trim(), sku, price: parseMoney(val('v-price')), cost: parseMoney(val('v-cost')), stock: 0, min: Math.max(0, toInt(val('v-min')) || 0) };
@@ -763,23 +846,29 @@ function saveProductFields() {
   const name = val('p-name').trim(); if (!name) { toast('O nome não pode ficar vazio.'); return false; }
   p.name = name; p.cat = readCat(); save(); return true;
 }
-function openVariant(pid, vid, sku) {
+function openVariant(pid, vid, sku, pre, resume) {
   const p = D.products.find(x => x.id === pid); if (!p) return; const v = vid ? p.variants.find(x => x.id === vid) : null;
-  S.sheet = { type: 'variant', pid, vid: vid || null };
+  S.sheet = { type: 'variant', pid, vid: vid || null, resume: resume || '' };
+  pre = pre || {}; const b = !v && sku ? skuBase(sku) : '', sib = b ? closestSibling(p.variants.filter(x => skuBase(x.sku) === b), sku) : null;
+  const pv = k => pre[k] != null && pre[k] !== '' ? pre[k] : '';
   sheetWrap(v ? 'Editar variação' : 'Nova variação', esc(p.name),
-    fld('Variação (ex.: Preto / 36)', 'v-label', '<input id="v-label" maxlength="60" autocomplete="off" value="' + esc(v ? v.label : '') + '">') +
-    fld('SKU', 'v-sku', '<div class="inrow"><input id="v-sku" maxlength="60" autocomplete="off" autocapitalize="characters" value="' + esc(v ? v.sku : sku || '') + '"><button class="btn" data-act="scanSku" aria-label="Ler SKU pelo QR Code">' + IC.cam + '</button></div>', 'É o código que está no QR Code da etiqueta.') +
-    '<div class="two">' + fld('Preço de venda', 'v-price', moneyIn('v-price', v && v.price ? fmtIn(v.price) : '')) + fld('Custo (opcional)', 'v-cost', moneyIn('v-cost', v && v.cost ? fmtIn(v.cost) : '')).replace('class="field"', 'class="field" data-need="costs"') + '</div>' +
-    '<div class="two">' + (v ? '<div class="field"><label>Estoque atual</label><div class="t1" style="padding:10px 0">' + (v.stock || 0) + ' un.</div></div>' : fld('Estoque inicial', 'v-stock', numIn('v-stock', ''))) + fld('Estoque mínimo', 'v-min', numIn('v-min', v && v.min ? v.min : '', 'Opcional')) + '</div>',
+    fld('Variação (ex.: Preto / 36)', 'v-label', '<input id="v-label" maxlength="60" autocomplete="off" value="' + esc(v ? v.label : pv('label')) + '">', sib ? 'Já cadastradas: ' + esc(p.variants.slice(0, 12).map(x => x.label || 'Única').join(', ')) + (p.variants.length > 12 ? '…' : '') : '') +
+    fld('SKU', 'v-sku', '<div class="inrow"><input id="v-sku" maxlength="60" autocomplete="off" autocapitalize="characters" value="' + esc(v ? v.sku : sku || '') + '"><button class="btn" data-act="scanSku" aria-label="Ler SKU pelo QR Code">' + IC.cam + '</button></div>', 'É o código que está no QR Code da etiqueta.') + '<div id="skunote"></div>' +
+    '<div class="two">' + fld('Preço de venda', 'v-price', moneyIn('v-price', v ? (v.price ? fmtIn(v.price) : '') : pv('price') || (sib && sib.price ? fmtIn(sib.price) : ''))) + fld('Custo (opcional)', 'v-cost', moneyIn('v-cost', v ? (v.cost ? fmtIn(v.cost) : '') : pv('cost') || (sib && sib.cost ? fmtIn(sib.cost) : ''))).replace('class="field"', 'class="field" data-need="costs"') + '</div>' +
+    '<div class="two">' + (v ? '<div class="field"><label>Estoque atual</label><div class="t1" style="padding:10px 0">' + (v.stock || 0) + ' un.</div></div>' : fld('Estoque inicial', 'v-stock', numIn('v-stock', pv('stock')))) + fld('Estoque mínimo', 'v-min', numIn('v-min', v ? (v.min || '') : pv('min') || (sib && sib.min ? sib.min : ''), 'Opcional')) + '</div>',
     '<button class="btn btn-primary" data-act="saveVariant">Salvar variação</button>' + (v ? '<button class="btn" data-act="adjustFromV" data-vid="' + v.id + '">Ajustar estoque</button>' + armBtn('delVariant', 'Apagar variação') : '') + '<button class="btn" data-act="backProduct">Voltar ao produto</button>');
+  updSkuNote();
 }
 function saveVariant() {
   const sh = S.sheet, p = D.products.find(x => x.id === sh.pid); if (!p) return;
-  const sku = val('v-sku').trim(); if (sku && skuTaken(sku, sh.vid)) { toast('Já existe uma variação com esse SKU.'); return; }
+  const sku = val('v-sku').trim(); if (sku && skuTaken(sku, sh.vid)) { updSkuNote(); toast('Já existe uma variação com esse SKU.'); return; }
+  if (sku && !sh.vid && !sh.force && famWarn(sku, sh.pid, null)) { updSkuNote(true); toast('Esse SKU parece ser de outro produto já cadastrado.'); return; }
   const fields = { label: val('v-label').trim(), sku, price: parseMoney(val('v-price')), cost: parseMoney(val('v-cost')), min: Math.max(0, toInt(val('v-min')) || 0) };
   if (sh.vid) Object.assign(p.variants.find(x => x.id === sh.vid), fields);
   else { const st = val('v-stock') === '' ? 0 : toInt(val('v-stock')); if (isNaN(st) || st < 0) { toast('Estoque inicial inválido.'); return; } const v = Object.assign({ id: uid(), stock: 0 }, fields); p.variants.push(v); if (st) moveStock(v, st, 'inicial', '', ''); }
-  save(); render(); openProduct(p.id); toast('Variação salva.');
+  save(); render();
+  if (sh.resume && !sh.vid) { closeSheet(); openScan(sh.resume); toast('Variação salva. Continue lendo.'); return; }
+  openProduct(p.id); toast('Variação salva.');
 }
 function deleteVariant() {
   const sh = S.sheet, p = D.products.find(x => x.id === sh.pid); if (!p) return;
@@ -875,7 +964,7 @@ async function openScan(mode, cb) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Este navegador não deixa usar a câmera aqui. Abra o app pelo endereço https ou instale-o.'); return; }
   Object.assign(sc, { mode, cb: cb || null, last: '', lastT: 0, undo: [], ins: 0 });
   try { sc.actx = sc.actx || new (window.AudioContext || window.webkitAudioContext)(); if (sc.actx.state === 'suspended') sc.actx.resume(); } catch (e) {}
-  const box = $('scan'); box.hidden = false;
+  const box = $('scan'); box.hidden = false; guardLater();
   box.innerHTML = '<video id="sv" playsinline muted autoplay></video><div class="reticle"></div><div class="scantop"><div class="scantitle" id="stitle"></div><button class="btn btn-sm" data-act="scanClose">Concluir</button></div><div class="scanbottom"><div class="smsg" id="smsg">Aponte a câmera para o QR Code</div><div class="srow">' + (mode === 'sale' || mode === 'in' ? '<button class="btn btn-sm" data-act="scanUndo">Desfazer o último</button>' : '') + '<button class="btn btn-sm" id="torch" data-act="torch" hidden>Lanterna</button></div></div>';
   setMsg('Aponte a câmera para o QR Code');
   try { sc.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); }
@@ -906,7 +995,11 @@ function onCode(raw) {
   const now = Date.now(); if (raw === sc.last && now - sc.lastT < 700) { sc.lastT = now; return; } sc.last = raw; sc.lastT = now;
   if (sc.mode === 'sku') { const cb = sc.cb; beep(true); closeScan(true); if (cb) cb(raw); return; }
   const h = resolveCode(raw);
-  if (!h) { beep(false); setMsg('SKU não cadastrado<small>' + esc(raw.slice(0, 80)) + '</small><button class="btn btn-sm" style="margin-top:8px" data-act="regSku" data-sku="' + esc(raw.slice(0, 60)) + '">Cadastrar este SKU</button>', true); return; }
+  if (!h) {
+    beep(false); const code = raw.trim().slice(0, 60), f = skuFamily(code);
+    if (f) { setMsg('SKU novo de ' + esc(f.p.name) + '<small>' + esc(code) + ' · ' + plural(f.vs.length, 'variação cadastrada', 'variações cadastradas') + '</small><button class="btn btn-sm" style="margin-top:8px" data-act="regVar" data-pid="' + f.p.id + '" data-sku="' + esc(code) + '">Adicionar variação neste produto</button><button class="btn btn-sm" style="margin-top:8px" data-act="regSku" data-sku="' + esc(code) + '">Cadastrar como produto novo</button>', true); return; }
+    setMsg('SKU não cadastrado<small>' + esc(raw.slice(0, 80)) + '</small><button class="btn btn-sm" style="margin-top:8px" data-act="regSku" data-sku="' + esc(code) + '">Cadastrar este SKU</button>', true); return;
+  }
   const v = h.v, nm = esc(vname(h.p, v));
   if (sc.mode === 'sale') { const q = addCart(v.id, 1); sc.undo.push(v.id); beep(true); renderBar(); setMsg('✓ ' + nm + '<small>' + brl(v.price || 0) + ' · ' + q + ' no carrinho' + (q > (v.stock || 0) ? ' · <b>estoque do sistema: ' + (v.stock || 0) + '</b>' : '') + '</small>'); }
   else if (sc.mode === 'in') { moveStock(v, 1, 'entrada', 'Entrada por QR', ''); save(); sc.undo.push(v.id); sc.ins++; beep(true); setMsg('✓ ' + nm + '<small>estoque agora: ' + v.stock + '</small>'); }
@@ -921,7 +1014,7 @@ function undoScan() {
 async function toggleTorch() { try { sc.torch = !sc.torch; await sc.track.applyConstraints({ advanced: [{ torch: sc.torch }] }); } catch (e) { sc.torch = false; toast('A lanterna não está disponível.'); } }
 function closeScan(silent) {
   sc.on = false; clearTimeout(sc.t); try { if (sc.stream) sc.stream.getTracks().forEach(t => t.stop()); } catch (e) {} sc.stream = null; sc.track = null;
-  const box = $('scan'); box.hidden = true; box.innerHTML = ''; const mode = sc.mode; if (silent) return;
+  const box = $('scan'); box.hidden = true; box.innerHTML = ''; guardLater(); const mode = sc.mode; if (silent) return;
   if (mode === 'count') { render(); openCount(); } else { render(); if (mode === 'sale' && cartLines().length) openCart(); }
 }
 
@@ -1066,7 +1159,12 @@ document.addEventListener('click', ev => {
     case 'scanSale': openScan('sale'); break;
     case 'scanIn': openScan('in'); break;
     case 'scanCount': closeSheet(); openScan('count'); break;
-    case 'scanSku': openScan('sku', code => { const el = $('v-sku'); if (el) el.value = code.trim(); }); break;
+    case 'scanSku': openScan('sku', code => { const el = $('v-sku'); if (el) { el.value = code.trim(); skuAfterScan(code); } }); break;
+    case 'skuIn': { const h = index().byId.get(ds.vid); if (h) openAdjust(h.v.id, 'in', h.p.id); break; }
+    case 'skuOpenV': { const h = index().byId.get(ds.vid); if (h) openVariant(h.p.id, h.v.id); break; }
+    case 'skuAddTo': openVariant(ds.pid, null, val('v-sku').trim(), formKeep(), S.sheet && S.sheet.resume); break;
+    case 'skuForce': if (S.sheet) { S.sheet.force = true; if (S.sheet.type === 'newp') saveNewProduct(); else if (S.sheet.type === 'variant') saveVariant(); } break;
+    case 'regVar': { const m = sc.mode, sku = ds.sku; closeScan(true); render(); openVariant(ds.pid, null, sku, m === 'in' ? { stock: '1' } : null, m === 'in' ? 'in' : ''); break; }
     case 'scanClose': closeScan(); break;
     case 'scanUndo': undoScan(); break;
     case 'torch': toggleTorch(); break;
@@ -1099,6 +1197,7 @@ document.addEventListener('input', ev => {
   const t = ev.target;
   if (t.id === 'q') { S.qs[S.tab] = t.value; S.lim = 60; refreshList(); }
   else if (t.id === 'vq') refreshPick();
+  else if (t.id === 'v-sku') updSkuNote();
   else if (t.id === 'b-v1' || t.id === 'b-v2') updateBatchCount();
   else if (t.id === 'c-disc' || t.id === 'c-recv' || t.dataset.lp) { collectCart(); updateCartTotals(); }
 });
@@ -1112,7 +1211,7 @@ document.addEventListener('change', async ev => {
   else if (t.dataset.cnt) { const n = toInt(t.value); if (!isNaN(n) && n >= 0) S.count[t.dataset.cnt] = n; }
 });
 document.addEventListener('keydown', ev => {
-  if (ev.key === 'Escape') { if (sc.on) closeScan(); else if (S.sheet) { closeSheet(); render(); } }
+  if (ev.key === 'Escape' && (sc.on || S.sheet)) goBack();
   if (ev.key === 'Enter' && ev.target && ev.target.id === 'q' && S.tab === 'caixa') {
     const h = resolveCode(ev.target.value); if (h) { const q = addCart(h.v.id, 1); renderBar(); toast(vname(h.p, h.v) + ' · ' + q + ' no carrinho'); ev.target.value = ''; S.qs.caixa = ''; refreshList(); }
   }
@@ -1135,7 +1234,7 @@ const roleLabel = r => ROLES[r] ? ROLES[r].label : r === 'pendente' ? 'Aguardand
 const permsOf = r => { const o = {}; PERM_LIST.forEach(k => { o[k] = !!(ROLES[r] && ROLES[r].perms.indexOf(k) >= 0); }); return o; };
 const can = k => !hasCfg() || (!!CL.me && CL.me.active === true && !!(CL.me.perms && CL.me.perms[k]));
 const ACTPERM = {
-  newProduct: 'products', saveNewProduct: 'products', editProduct: 'products', saveProduct: 'products', newVariant: 'products', editVariant: 'products', saveVariant: 'products', batch: 'products', saveBatch: 'products', backProduct: 'products', regSku: 'products', csvPick: 'products', impApply: 'products', delProduct: 'products', delVariant: 'products',
+  newProduct: 'products', saveNewProduct: 'products', editProduct: 'products', saveProduct: 'products', newVariant: 'products', editVariant: 'products', saveVariant: 'products', batch: 'products', saveBatch: 'products', backProduct: 'products', regSku: 'products', regVar: 'products', skuAddTo: 'products', skuOpenV: 'products', skuForce: 'products', skuIn: 'stock', csvPick: 'products', impApply: 'products', delProduct: 'products', delVariant: 'products',
   adjust: 'stock', adjustFromV: 'stock', amode: 'stock', saveAdjust: 'stock', scanIn: 'stock', scanCount: 'stock', applyCount: 'stock', dropCount: 'stock',
   scanSale: 'sell', pick: 'sell', addv: 'sell', vinc: 'sell', vdec: 'sell', cart: 'sell', cinc: 'sell', cdec: 'sell', inst: 'sell', dtype: 'sell', pay: 'sell', clearCart: 'sell', finish: 'sell',
   cancelSale: 'cancel', sale: 'reports', csvSales: 'costs', csvReport: 'costs', csvStock: 'costs',

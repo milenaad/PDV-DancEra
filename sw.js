@@ -1,6 +1,6 @@
 /* Meu PDV: guarda o app no aparelho para abrir sem internet. */
 const PREFIX = 'meu-pdv-';
-const CACHE = PREFIX + 'v5';
+const CACHE = PREFIX + 'v6';
 const CORE = ['./', 'index.html', 'jsQR.js', 'firebase-config.js', 'firebase-bundle.js', 'logo.png', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(CORE.map(u => c.add(u).catch(() => null)))).then(() => self.skipWaiting()));
