@@ -289,7 +289,11 @@ const evList = () => D.store.events || [];
 const evById = id => evList().find(e => e.id === id);
 const curEv = () => evById(D.store.curEv);
 const evLabel = e => e.name + (e.ed ? ' · ' + e.ed : '');
-const evCost = (e, total) => (e.fixed || 0) + Math.round(total * (e.bp || 0) / 10000);
+const evExtras = e => Array.isArray(e.extras) ? e.extras.filter(x => x && x.id) : [];
+const evExtra = e => evExtras(e).reduce((a, x) => a + (x.amt || 0), 0);
+/* custo do evento = valor cobrado + percentual sobre a venda + custos extras (estacionamento, alimentação...) */
+const evCost = (e, total) => (e.fixed || 0) + Math.round(total * (e.bp || 0) / 10000) + evExtra(e);
+const evCostTxt = e => [e.fixed ? brl(e.fixed) : '', e.bp ? fmtPct(e.bp) + '% da venda' : '', evExtras(e).length ? 'extras ' + brl(evExtra(e)) : ''].filter(Boolean).join(' + ');
 const evTest = s => { const f = S.evf; if (!f) return true; if (f === 'none') return !s.ev; if (f.indexOf('ev:') === 0) return !!s.ev && s.ev.id === f.slice(3); if (f.indexOf('nm:') === 0) return !!s.ev && norm(s.ev.name) === f.slice(3); return true; };
 const catOk = p => !S.cat || (S.cat === '__none' ? !p.cat : norm(p.cat) === norm(S.cat));
 function catBar() {
@@ -540,7 +544,8 @@ function openEvent(id, mode) {
     fld('Edição', 'e-ed', '<input id="e-ed" maxlength="60" autocomplete="off" placeholder="Ex.: Outubro 2026, 3ª edição" value="' + esc(e ? e.ed || '' : '') + '">', 'É o que separa um ano ou uma data do outro no relatório.') +
     '<div class="sect" style="margin-top:4px">Quanto custou estar no evento</div>' +
     '<div class="two">' + fld('Valor cobrado (R$)', 'e-fixed', moneyIn('e-fixed', e && e.fixed ? fmtIn(e.fixed) : '')) + fld('Percentual sobre a venda', 'e-pct', '<div class="pct-in"><input id="e-pct" inputmode="decimal" autocomplete="off" placeholder="0,00" value="' + (e && e.bp ? fmtPct(e.bp) : '') + '"><span>%</span></div>') + '</div>' +
-    '<p class="foot">Preencha um, outro ou os dois (os dois são somados). O percentual é calculado sobre o total vendido no evento.</p>',
+    '<p class="foot">Preencha um, outro ou os dois (os dois são somados). O percentual é calculado sobre o total vendido no evento.</p>' +
+    (e && !day ? '<div class="sect" style="margin-top:12px">Custos extras</div><p class="foot" style="margin:0 0 10px">' + (evExtras(e).length ? plural(evExtras(e).length, 'custo extra', 'custos extras') + ' · total ' + brl(evExtra(e)) : 'Estacionamento, alimentação, transporte e outros gastos do evento.') + '</p><div class="btnrow" style="margin-bottom:12px"><button class="btn" data-act="evExtras" data-id="' + e.id + '" data-back="1">Ver e lançar custos extras</button></div>' : ''),
     '<button class="btn btn-primary" data-act="saveEvent">' + (day ? 'Abrir o dia' : e ? 'Salvar' : 'Abrir evento') + '</button>' +
     (day && e ? '<button class="btn" data-act="evNew">É outro evento</button>' : '') +
     '<button class="btn" data-act="evSkip">' + (day || !e ? 'Hoje não é evento' : 'Cancelar') + '</button>');
@@ -560,6 +565,33 @@ function saveEvent() {
   }
   D.store.curEv = e.id; D.store.evDay = tk; S.evAsked = true; save(); closeSheet(); render();
 }
+const EXTRA_SUG = ['Estacionamento', 'Alimentação', 'Combustível', 'Pedágio', 'Transporte / Uber', 'Hospedagem', 'Ajudante', 'Material do estande'];
+function openExtras(id, back) {
+  if (!can('config')) { toast('Só quem tem permissão de configuração lança custos do evento.'); return; }
+  const e = evById(id); if (!e) { toast('Não encontrei esse evento.'); return; }
+  S.sheet = { type: 'evextra', id, back: !!back };
+  const xs = evExtras(e).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const used = []; evList().forEach(x => evExtras(x).forEach(i => { if (i.desc && !used.some(u => norm(u) === norm(i.desc))) used.push(i.desc); }));
+  const sug = used.concat(EXTRA_SUG.filter(x => !used.some(u => norm(u) === norm(x))));
+  sheetWrap('Custos extras', esc(evLabel(e)) + ' · entram no custo do evento e no lucro final',
+    (xs.length ? '<div class="list" style="margin:0 0 6px">' + xs.map(x => '<div class="row"><div class="mid"><div class="t1">' + esc(x.desc || 'Custo extra') + '</div><div class="t2">' + (x.ts ? fmtDate(x.ts) : '') + '</div></div><span class="amt">' + brl(x.amt || 0) + '</span><button class="btn btn-sm" data-act="exDel" data-xid="' + x.id + '" aria-label="Remover ' + esc(x.desc || 'custo') + '">Remover</button></div>').join('') + '</div><div class="totline" style="margin:8px 0 14px"><span>Total de custos extras</span><strong>' + brl(evExtra(e)) + '</strong></div>' : '<p class="foot" style="margin:0 0 14px">Nenhum custo extra lançado neste evento ainda.</p>') +
+    '<div class="sect" style="margin-top:0">Lançar custo</div>' +
+    fld('Descrição', 'x-desc', '<input id="x-desc" maxlength="60" autocomplete="off" list="xsug" placeholder="Ex.: Estacionamento"><datalist id="xsug">' + sug.map(n => '<option value="' + esc(n) + '">').join('') + '</datalist>') +
+    fld('Valor', 'x-amt', moneyIn('x-amt', '')),
+    '<button class="btn btn-primary" data-act="exAdd">Adicionar custo</button><button class="btn" data-act="exBack">' + (back ? 'Voltar ao evento' : 'Fechar') + '</button>');
+}
+function addExtra() {
+  const sh = S.sheet; if (!sh || sh.type !== 'evextra') return; const e = evById(sh.id); if (!e) return;
+  const desc = val('x-desc').replace(/\s+/g, ' ').trim(), amt = parseMoney(val('x-amt'));
+  if (!desc) { toast('Escreva o que foi o gasto.'); return; } if (!amt) { toast('Informe o valor.'); return; }
+  if (!Array.isArray(e.extras)) e.extras = [];
+  e.extras.push({ id: uid(), desc, amt, ts: Date.now() }); save(); render(); openExtras(e.id, sh.back); toast(desc + ' · ' + brl(amt) + ' lançado.');
+  setTimeout(() => { const x = $('x-desc'); if (x) x.focus(); }, 30);
+}
+function delExtra(xid) {
+  const sh = S.sheet; if (!sh || sh.type !== 'evextra') return; const e = evById(sh.id); if (!e) return;
+  e.extras = evExtras(e).filter(x => x.id !== xid); save(); render(); openExtras(e.id, sh.back); toast('Custo extra removido.');
+}
 function maybeEvPrompt() {
   if (S.evAsked || S.tab !== 'caixa' || S.sheet || !can('config') || !can('sell') || !D.products.length) return;
   if (hasCfg() && !CL.ready) return;
@@ -570,13 +602,13 @@ function maybeEvPrompt() {
 function evBar() {
   const ce = curEv();
   if (!ce) return '<div class="evbar"><span>Sem evento aberto</span><button class="btn" data-act="evNew">Abrir evento</button></div>';
-  const cost = [ce.fixed ? brl(ce.fixed) : '', ce.bp ? fmtPct(ce.bp) + '% da venda' : ''].filter(Boolean).join(' + ');
-  return '<div class="evbar"><div class="mid"><div class="t1">' + esc(evLabel(ce)) + '</div><div class="t2">' + (cost ? 'Custo do evento: ' + esc(cost) : 'Custo do evento não informado') + '</div></div><button class="btn" data-act="evEdit" data-id="' + ce.id + '">Editar</button><button class="btn" data-act="evNew">Trocar</button><button class="btn" data-act="evEnd">Encerrar</button></div>';
+  const cost = evCostTxt(ce);
+  return '<div class="evbar"><div class="mid"><div class="t1">' + esc(evLabel(ce)) + '</div><div class="t2">' + (cost ? 'Custo do evento: ' + esc(cost) : 'Custo do evento não informado') + '</div></div>' + (can('config') ? '<button class="btn" data-act="evExtras" data-id="' + ce.id + '">+ Custo extra</button>' : '') + '<button class="btn" data-act="evEdit" data-id="' + ce.id + '">Editar</button><button class="btn" data-act="evNew">Trocar</button><button class="btn" data-act="evEnd">Encerrar</button></div>';
 }
 function eventsCard() {
   const evs = evList().slice().sort((a, b) => (b.start || 0) - (a.start || 0));
   return '<section class="card" data-need="config"><h2>Eventos</h2><p class="hint">Cada edição de cada evento. As vendas feitas com o evento aberto ficam ligadas a ele, e o relatório em Vendas mostra o resultado depois de descontar o custo do evento.</p>' +
-    (evs.length ? '<div class="list" style="margin-top:0">' + evs.map(e => '<div class="row"><div class="mid"><div class="t1">' + esc(evLabel(e)) + (D.store.curEv === e.id ? ' <span class="pill">Aberto</span>' : '') + '</div><div class="t2">' + fmtDate(e.start) + ' · ' + esc([e.fixed ? brl(e.fixed) : '', e.bp ? fmtPct(e.bp) + '%' : ''].filter(Boolean).join(' + ') || 'sem custo informado') + '</div></div><button class="btn" data-act="evEdit" data-id="' + e.id + '">Editar</button></div>').join('') + '</div>' : '<p class="foot">Nenhum evento ainda. Ele é criado quando você abre o dia no Caixa.</p>') +
+    (evs.length ? '<div class="list" style="margin-top:0">' + evs.map(e => '<div class="row"><div class="mid"><div class="t1">' + esc(evLabel(e)) + (D.store.curEv === e.id ? ' <span class="pill">Aberto</span>' : '') + '</div><div class="t2">' + fmtDate(e.start) + ' · ' + esc(evCostTxt(e) || 'sem custo informado') + '</div></div><button class="btn" data-act="evEdit" data-id="' + e.id + '">Editar</button></div>').join('') + '</div>' : '<p class="foot">Nenhum evento ainda. Ele é criado quando você abre o dia no Caixa.</p>') +
     '<div class="btnrow"><button class="btn btn-primary" data-act="evNew">Novo evento</button></div></section>';
 }
 function evFilterHtml() {
@@ -654,11 +686,15 @@ function vendas() {
   h += '<div class="kpis big" data-need="costs"><div><span class="k">Lucro (vendas − custo − taxas)</span><span class="kv">' + brl(profT) + '</span></div><div><span class="k">Margem</span><span class="kv">' + (tot > 0 ? (profT / tot * 100).toFixed(1).replace('.', ',') + '%' : '—') + '</span></div></div>';
   if (S.evf && S.evf !== 'none') {
     const evs = evList().filter(e => S.evf.indexOf('ev:') === 0 ? e.id === S.evf.slice(3) : norm(e.name) === S.evf.slice(3));
-    const rows = evs.map(e => { const sl = ok.filter(x => x.ev && x.ev.id === e.id), tt = sl.reduce((a, x) => a + x.total, 0), cc = sl.map(saleCalc), pr = tt - cc.reduce((a, x) => a + x.cost + x.fee, 0), ec = evCost(e, tt); return { e, n: sl.length, tt, ec, fx: e.fixed || 0, pc: ec - (e.fixed || 0), fin: pr - ec }; }).sort((a, b) => (b.e.start || 0) - (a.e.start || 0));
+    const rows = evs.map(e => { const sl = ok.filter(x => x.ev && x.ev.id === e.id), tt = sl.reduce((a, x) => a + x.total, 0), cc = sl.map(saleCalc), pr = tt - cc.reduce((a, x) => a + x.cost + x.fee, 0), ec = evCost(e, tt), ex = evExtra(e); return { e, n: sl.length, tt, ec, ex, ch: ec - ex, fin: pr - ec }; }).sort((a, b) => (b.e.start || 0) - (a.e.start || 0));
     const sum = k => rows.reduce((a, r) => a + r[k], 0);
-    h += '<div class="kpis" data-need="costs"><div><span class="k">Custo do evento</span><span class="kv">' + brl(sum('ec')) + '</span></div><div><span class="k">Valor fixo + percentual</span><span class="kv" style="font-size:16px">' + brl(sum('fx')) + ' + ' + brl(sum('pc')) + '</span></div></div>';
+    h += '<div class="kpis" data-need="costs"><div><span class="k">Cobrado pelo evento (fixo + %)</span><span class="kv">' + brl(sum('ch')) + '</span></div><div><span class="k">Custos extras</span><span class="kv">' + brl(sum('ex')) + '</span></div></div>';
+    h += '<div class="kpis" data-need="costs"><div><span class="k">Custo total do evento</span><span class="kv">' + brl(sum('ec')) + '</span></div><div><span class="k">Lucro antes do evento</span><span class="kv">' + brl(profT) + '</span></div></div>';
     h += '<div class="kpis big" data-need="costs"><div><span class="k">Lucro final (depois do evento)</span><span class="kv">' + brl(profT - sum('ec')) + '</span></div><div><span class="k">Margem final</span><span class="kv">' + (tot > 0 ? ((profT - sum('ec')) / tot * 100).toFixed(1).replace('.', ',') + '%' : '—') + '</span></div></div>';
     if (rows.length > 1) h += '<section class="card" data-need="costs"><h2>Edições</h2><p class="hint">Cada edição com o custo do evento e o lucro final.</p><div class="list" style="margin-top:0">' + rows.map(r => '<div class="row"><div class="mid"><div class="t1">' + esc(evLabel(r.e)) + '</div><div class="t2">' + fmtDate(r.e.start) + ' · vendeu ' + brl(r.tt) + ' · evento ' + brl(r.ec) + '</div></div><span class="amt">' + brl(r.fin) + '<small>lucro final</small></span></div>').join('') + '</div></section>';
+    const xl = []; rows.forEach(r => evExtras(r.e).forEach(x => xl.push({ r, x })));
+    if (xl.length) h += '<section class="card" data-need="costs"><h2>Custos extras</h2><div class="list" style="margin-top:0">' + xl.map(o => '<div class="row"><div class="mid"><div class="t1">' + esc(o.x.desc || 'Custo extra') + '</div><div class="t2">' + (o.x.ts ? fmtDate(o.x.ts) : '') + (rows.length > 1 ? ' · ' + esc(evLabel(o.r.e)) : '') + '</div></div><span class="amt">' + brl(o.x.amt || 0) + '</span></div>').join('') + '</div>' + (rows.length === 1 && can('config') ? '<div class="btnrow" style="margin-top:12px"><button class="btn" data-act="evExtras" data-id="' + rows[0].e.id + '">Lançar ou remover</button></div>' : '') + '</section>';
+    else if (rows.length === 1 && can('config')) h += '<div class="btnrow" data-need="costs" style="margin-top:12px"><button class="btn" data-act="evExtras" data-id="' + rows[0].e.id + '">Lançar custos extras deste evento</button></div>';
     if (!rows.length) h += '<p class="foot">Não encontrei o cadastro desse evento.</p>';
   }
   if (noCost) h += '<p class="foot" data-need="costs">' + plural(noCost, 'item vendido está', 'itens vendidos estão') + ' sem custo cadastrado. Nesses itens o lucro aparece maior do que é de verdade.</p>';
@@ -737,6 +773,7 @@ function goBack() {
   if (sh) {
     if (sh.type === 'cloudchoice') return true;
     if (sh.type === 'event') S.evAsked = true;
+    if (sh.type === 'evextra' && sh.back && evById(sh.id)) { openEvent(sh.id); return true; }
     if ((sh.type === 'variant' || sh.type === 'batch') && D.products.some(p => p.id === sh.pid)) { openProduct(sh.pid); return true; }
     if (sh.type === 'adjust' && sh.back && D.products.some(p => p.id === sh.back)) { openProduct(sh.back); return true; }
     closeSheet(); render(); return true;
@@ -1087,7 +1124,7 @@ function csvReport() {
   r.push(['TOTAL', '', '', '', q, fmtIn(v), fmtIn(c), fmtIn(f), fmtIn(l), v > 0 ? (l / v * 100).toFixed(1).replace('.', ',') : '', '']);
   if (S.evf && S.evf !== 'none') {
     const evs = evList().filter(e => S.evf.indexOf('ev:') === 0 ? e.id === S.evf.slice(3) : norm(e.name) === S.evf.slice(3));
-    let ec = 0; evs.forEach(e => { const tt = ok.filter(x => x.ev && x.ev.id === e.id).reduce((a, x) => a + x.total, 0); const c = evCost(e, tt); ec += c; r.push(['Custo do evento: ' + evLabel(e), '', '', '', '', '', '', '', fmtIn(-c), '', '']); });
+    let ec = 0; evs.forEach(e => { const tt = ok.filter(x => x.ev && x.ev.id === e.id).reduce((a, x) => a + x.total, 0); const c = evCost(e, tt), ex = evExtra(e); ec += c; r.push(['Custo do evento (cobrado: fixo + %): ' + evLabel(e), '', '', '', '', '', '', '', fmtIn(-(c - ex)), '', '']); evExtras(e).forEach(x => r.push(['Custo extra: ' + (x.desc || '') + ' · ' + evLabel(e) + (x.ts ? ' · ' + fmtDate(x.ts) : ''), '', '', '', '', '', '', '', fmtIn(-(x.amt || 0)), '', ''])); });
     r.push(['LUCRO FINAL (depois do evento)', '', '', '', '', '', '', '', fmtIn(l - ec), '', '']);
   }
   download('relatorio-' + (S.evf ? 'evento' : S.period) + '-' + dayKey(Date.now()) + '.csv', csvOut(r));
@@ -1119,6 +1156,10 @@ document.addEventListener('click', ev => {
     case 'limmore': S.lim += 60; if (S.tab === 'vendas') render(); else refreshList(); break;
     case 'evNew': openEvent(null); break;
     case 'evEdit': openEvent(ds.id); break;
+    case 'evExtras': openExtras(ds.id, ds.back === '1'); break;
+    case 'exAdd': addExtra(); break;
+    case 'exDel': if (t.dataset.armed) delExtra(ds.xid); else { t.dataset.armed = '1'; t.textContent = 'Confirmar'; } break;
+    case 'exBack': if (S.sheet && S.sheet.back) openEvent(S.sheet.id); else { closeSheet(); render(); } break;
     case 'saveEvent': saveEvent(); break;
     case 'evSkip': S.evAsked = true; closeSheet(); render(); break;
     case 'evEnd': { if (!can('config')) { toast('Sem permissão.'); break; } const e = curEv(); if (e) e.end = Date.now(); D.store.curEv = ''; D.store.evDay = ''; S.evAsked = true; save(); render(); toast('Evento encerrado.'); break; }
@@ -1211,6 +1252,7 @@ document.addEventListener('change', async ev => {
   else if (t.dataset.cnt) { const n = toInt(t.value); if (!isNaN(n) && n >= 0) S.count[t.dataset.cnt] = n; }
 });
 document.addEventListener('keydown', ev => {
+  if (ev.key === 'Enter' && ev.target && (ev.target.id === 'x-amt' || ev.target.id === 'x-desc') && S.sheet && S.sheet.type === 'evextra') { ev.preventDefault(); if (ev.target.id === 'x-desc') { const a = $('x-amt'); if (a) a.focus(); } else addExtra(); return; }
   if (ev.key === 'Escape' && (sc.on || S.sheet)) goBack();
   if (ev.key === 'Enter' && ev.target && ev.target.id === 'q' && S.tab === 'caixa') {
     const h = resolveCode(ev.target.value); if (h) { const q = addCart(h.v.id, 1); renderBar(); toast(vname(h.p, h.v) + ' · ' + q + ' no carrinho'); ev.target.value = ''; S.qs.caixa = ''; refreshList(); }
@@ -1234,6 +1276,7 @@ const roleLabel = r => ROLES[r] ? ROLES[r].label : r === 'pendente' ? 'Aguardand
 const permsOf = r => { const o = {}; PERM_LIST.forEach(k => { o[k] = !!(ROLES[r] && ROLES[r].perms.indexOf(k) >= 0); }); return o; };
 const can = k => !hasCfg() || (!!CL.me && CL.me.active === true && !!(CL.me.perms && CL.me.perms[k]));
 const ACTPERM = {
+  evExtras: 'config', exAdd: 'config', exDel: 'config',
   newProduct: 'products', saveNewProduct: 'products', editProduct: 'products', saveProduct: 'products', newVariant: 'products', editVariant: 'products', saveVariant: 'products', batch: 'products', saveBatch: 'products', backProduct: 'products', regSku: 'products', regVar: 'products', skuAddTo: 'products', skuOpenV: 'products', skuForce: 'products', skuIn: 'stock', csvPick: 'products', impApply: 'products', delProduct: 'products', delVariant: 'products',
   adjust: 'stock', adjustFromV: 'stock', amode: 'stock', saveAdjust: 'stock', scanIn: 'stock', scanCount: 'stock', applyCount: 'stock', dropCount: 'stock',
   scanSale: 'sell', pick: 'sell', addv: 'sell', vinc: 'sell', vdec: 'sell', cart: 'sell', cinc: 'sell', cdec: 'sell', inst: 'sell', dtype: 'sell', pay: 'sell', clearCart: 'sell', finish: 'sell',
