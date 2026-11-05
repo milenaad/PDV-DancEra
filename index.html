@@ -754,7 +754,7 @@ function lisoField(p, v) {
 /* estampar: tira do liso e soma no pronto */
 function openPrint() {
   S.sheet = { type: 'print', lines: [] };
-  sheetWrap('Estampar', 'Tira do estoque liso e soma no estoque pronto',
+  sheetWrap('Estampar', 'Tira do estoque liso e soma no estoque pronto · custo do pronto = liso + estampa (' + brl(printCost()) + ')',
     '<div class="field"><label for="pq">Produto estampado</label><input id="pq" type="text" inputmode="search" autocomplete="off" placeholder="Buscar estampa, cor, tamanho ou SKU"></div><div id="pres"></div><div id="plines"></div>',
     '<button class="btn btn-primary" data-act="printSave">Confirmar estampa</button><button class="btn" data-act="close">Cancelar</button>');
   renderPrintRes(); renderPrintLines(); setTimeout(() => { const e = $('pq'); if (e) e.focus(); }, 30);
@@ -787,7 +787,7 @@ function printSave() {
   const sh = S.sheet; if (!sh || sh.type !== 'print') return; const L = sh.lines.filter(x => x.qty > 0); if (!L.length) { toast('Adicione pelo menos um produto.'); return; }
   const I = index(), ref = uid(); let n = 0;
   L.forEach(ln => { const x = I.byId.get(ln.vid); if (!x) return; const l = lisoOf(x.p, x.v);
-    moveStock(x.v, ln.qty, 'estampa', l ? 'Do liso ' + lisoName(l) : 'Sem liso ligado', ref);
+    costFromLiso(x.v, ln.qty, l); moveStock(x.v, ln.qty, 'estampa', l ? 'Do liso ' + lisoName(l) : 'Sem liso ligado', ref);
     if (l) moveStock(l.v, -ln.qty, 'estampa', 'Estampado: ' + vname(x.p, x.v), ref); n += ln.qty; });
   save(); closeSheet(); render(); toast(plural(n, 'peça estampada', 'peças estampadas') + '. Estoques atualizados.');
 }
@@ -1044,6 +1044,59 @@ function remoteLot(id, x) {
   const r = Object.assign({}, x); delete r.u; if (i >= 0) D.lots[i] = r; else D.lots.push(r); CL.sig.s[id] = sigOf(clone(r)); return true;
 }
 
+/* ---------- cadastro de lisos com várias variações de uma vez; custo da estampa ---------- */
+const printCost = () => D.store.printCost != null ? D.store.printCost : 700;
+const SZ_RE = /^(PP|P|M|GG|G|XG|EG|XGG|2|4|6|8|10|12|14|16)$/i;
+const titleCase = s => s.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+/* "preto p" → "Preto / P"; "Off White 14: 5" → { label: "Off White / 14", qty: 5 } */
+function parseVarLine(raw) {
+  let t = String(raw || '').trim(); if (!t) return null; let qty = 0;
+  const m = t.match(/^(.*?)[:=]\s*(\d+)\s*$/); if (m) { t = m[1].trim(); qty = parseInt(m[2], 10) || 0; }
+  const parts = t.replace(/\s*\/\s*/g, ' ').split(/\s+/).filter(Boolean); if (!parts.length) return null;
+  const last = parts[parts.length - 1];
+  if (SZ_RE.test(last)) { const color = titleCase(parts.slice(0, -1).join(' ')); return { label: (color ? color + ' / ' : '') + last.toUpperCase(), qty }; }
+  return { label: titleCase(parts.join(' ')), qty };
+}
+function varLines() {
+  const L = []; String(val('nl-vars')).split(/[\n,;]+/).forEach(x => { const r = parseVarLine(x); if (r && !L.some(y => norm(y.label) === norm(r.label))) L.push(r); });
+  const cs = String(val('nl-cores')).split(/[,;\n]+/).map(x => x.trim()).filter(Boolean), ts = String(val('nl-tams')).split(/[,;\n\s]+/).map(x => x.trim()).filter(Boolean);
+  if (cs.length && ts.length) cs.forEach(c => ts.forEach(z => { const r = parseVarLine(c + ' ' + z); if (r && !L.some(y => norm(y.label) === norm(r.label))) L.push(r); }));
+  return L;
+}
+function openNewLiso(pid) {
+  const p = pid ? D.products.find(x => x.id === pid && isLiso(x)) : null; S.sheet = { type: 'newliso', pid: p ? p.id : '' };
+  sheetWrap(p ? 'Adicionar variações' : 'Novo liso', p ? esc(p.name) + ' · as que já existem são ignoradas' : 'Peça sem estampa, com todas as variações de uma vez',
+    (p ? '' : fld('Nome', 'p-name', '<input id="p-name" maxlength="80" autocomplete="off" placeholder="Ex.: Moletom, Camiseta, Baby look, Camiseta infantil">') + catField('')) +
+    fld('Variações', 'nl-vars', '<textarea id="nl-vars" rows="5" autocomplete="off" placeholder="Preto P\nPreto M\nPreto G\nOff White 14"></textarea>', 'Uma por linha (ou separadas por vírgula): cor e tamanho. Para já lançar o estoque, use dois-pontos: <strong>Preto P: 10</strong>. Sem variação (ex.: camiseta infantil), deixe em branco.') +
+    '<details style="margin:-4px 0 12px"><summary class="foot" style="cursor:pointer;margin:0">Ou gerar todas as combinações de cores × tamanhos</summary><div class="two" style="margin-top:8px">' + fld('Cores', 'nl-cores', '<input id="nl-cores" autocomplete="off" placeholder="Preto, Off White">') + fld('Tamanhos', 'nl-tams', '<input id="nl-tams" autocomplete="off" placeholder="PP, P, M, G, GG, 14">') + '</div></details>' +
+    '<div class="two">' + fld('Custo por peça', 'nl-cost', moneyIn('nl-cost', '')).replace('class="field"', 'class="field" data-need="costs"') + fld('Estoque mínimo', 'nl-min', numIn('nl-min', '', 'Opcional')) + '</div>' +
+    '<div id="nl-prev" class="foot" style="margin:-4px 0 12px"></div>',
+    '<button class="btn btn-primary" data-act="saveNewLiso">' + (p ? 'Adicionar variações' : 'Salvar liso') + '</button>' + (p ? '<button class="btn" data-act="backProduct">Voltar</button>' : cancelBtn));
+  if (p) S.sheet.pid = p.id; updNewLiso(); setTimeout(() => { const e = $(p ? 'nl-vars' : 'p-name'); if (e) e.focus(); }, 30);
+}
+function updNewLiso() {
+  const el = $('nl-prev'); if (!el) return; const L = varLines(), p = S.sheet && S.sheet.pid ? D.products.find(x => x.id === S.sheet.pid) : null;
+  const nw = p ? L.filter(r => !p.variants.some(v => norm(v.label) === norm(r.label))) : L;
+  el.innerHTML = !L.length ? (p ? 'Escreva as variações.' : 'Sem variações: o liso terá um estoque só.') : 'Serão criadas ' + plural(nw.length, 'variação', 'variações') + ': ' + nw.slice(0, 40).map(r => esc(r.label) + (r.qty ? ' (' + r.qty + ')' : '')).join(' · ') + (nw.length > 40 ? '…' : '') + (L.length > nw.length ? ' <span class="warnt">· ' + (L.length - nw.length) + ' já existe(m)</span>' : '');
+}
+function saveNewLiso() {
+  const sh = S.sheet; if (!sh || sh.type !== 'newliso') return; const L = varLines(), cost = parseMoney(val('nl-cost')), mn = Math.max(0, toInt(val('nl-min')) || 0);
+  if (L.length > 300) { toast('O máximo é 300 variações por vez.'); return; }
+  let p = sh.pid ? D.products.find(x => x.id === sh.pid) : null, created = false;
+  if (!p) { const name = val('p-name').replace(/\s+/g, ' ').trim(); if (!name) { toast('Dê um nome ao liso.'); return; }
+    p = D.products.find(x => isLiso(x) && norm(x.name) === norm(name)) || null;
+    if (!p) { p = { id: uid(), name, kind: 'liso', cat: readCat(), variants: [] }; D.products.push(p); created = true; } }
+  const rows = L.length ? L : (p.variants.length ? [] : [{ label: '', qty: 0 }]); let n = 0;
+  rows.forEach(r => { if (p.variants.some(v => norm(v.label) === norm(r.label))) return; const v = { id: uid(), label: r.label, sku: '', price: 0, cost, stock: 0, min: mn }; p.variants.push(v); idx = null; n++; if (r.qty) moveStock(v, r.qty, 'inicial', '', ''); });
+  if (!n && !created) { toast('Nenhuma variação nova.'); return; }
+  save(); render(); openProduct(p.id); toast((created ? 'Liso criado com ' : 'Adicionadas ') + plural(n, 'variação', 'variações') + '.');
+}
+/* ao estampar: custo do pronto = média entre o que já tinha e (custo do liso + estampa) */
+function costFromLiso(v, q, l) { if (l && l.v.cost && q > 0) addAvgCost(v, q, l.v.cost + printCost()); }
+function printCostCard() {
+  return '<section class="card" data-need="costs"><h2>Custo da estampa</h2><p class="hint">Somado ao custo do liso quando a peça passa para o estoque pronto (Estampar, Dar entrada com “tirar do liso”). Se uma estampa custar bem diferente, ajuste o custo na variação do produto pronto.</p><div class="inrow"><div class="money-in" style="flex:1"><span>R$</span><input id="pc-val" inputmode="decimal" autocomplete="off" value="' + fmtIn(printCost()) + '" aria-label="Custo da estampa por peça"></div><button class="btn" data-act="savePrintCost" data-need="config">Salvar</button></div></section>';
+}
+
 /* ---------- tela inicial: Estoque · PDV (eventos) · Venda do site ---------- */
 const MODES = { estoque: 'Estoque', pdv: 'PDV · Eventos', site: 'Vendas do site' };
 const modeOk = m => m === 'pdv' ? ['caixa', 'produtos', 'estoque', 'vendas', 'mais'].some(tabAllowed) : m === 'estoque' ? (can('stock') || can('products')) : m === 'site' ? can('stock') : false;
@@ -1079,7 +1132,7 @@ function estoqueGeral() {
   const byP = D.products.filter(inK).map(p => ({ p, val: isIns(p) ? insVal(p.variants[0]) : p.variants.reduce((a, v) => a + Math.max(v.stock || 0, 0) * (v.cost || 0), 0) })).filter(x => x.val > 0).sort((a, b) => b.val - a.val);
   if (cs && byP.length) { const mx = byP[0].val; h += '<section class="card" data-need="costs"><h2>Onde está o valor</h2><p class="hint">Valor a preço de custo por produto' + (byP.length > 8 ? ' (os 8 maiores)' : '') + '.</p>' + byP.slice(0, 8).map(x => '<div class="brow"><div class="tp"><span style="min-width:0;overflow-wrap:anywhere">' + (isLiso(x.p) ? 'Liso · ' : isIns(x.p) ? 'Insumo · ' : '') + esc(x.p.name) + '</span><span class="vl">' + brl(x.val) + '</span></div><div class="track"><div class="fill" style="width:' + Math.max(2, Math.round(x.val / mx * 100)) + '%"></div></div></div>').join('') + '</section>'; }
   h += '<div class="pbar"><div class="sect" style="margin:0">Entrada de lisos</div><div class="two"><button class="btn btn-primary" data-act="lotNew">Lote de produção</button><button class="btn" data-act="buyLiso">Comprar lisos</button></div><div class="two"><button class="btn" data-act="buyIns" data-id="">Comprar insumo</button><button class="btn" data-act="print">Estampar</button></div>' +
-    '<div class="sect" style="margin:4px 0 0">Cadastros</div><div class="two"><button class="btn" data-act="newLiso">Novo liso</button><button class="btn" data-act="newProduct">Novo pronto</button></div><button class="btn" data-act="scanIn">' + IC.cam + 'Dar entrada pelo QR</button></div>' + lotsCard();
+    '<div class="sect" style="margin:4px 0 0">Cadastros</div><div class="two"><button class="btn" data-act="newLiso">Novo liso</button><button class="btn" data-act="newProduct">Novo pronto</button></div><button class="btn" data-act="scanIn">' + IC.cam + 'Dar entrada pelo QR</button></div>' + lotsCard() + printCostCard();
   h += '<div class="pbar" style="margin-top:12px"><input id="gq" type="text" inputmode="search" autocomplete="off" placeholder="Buscar produto, cor, tamanho ou SKU" value="' + esc(S.qs.geral || '') + '" aria-label="Buscar no estoque"></div><div id="glist">' + geralRows() + '</div>';
   return h;
 }
@@ -1329,11 +1382,11 @@ function saveNewProduct() {
 function openProduct(pid) {
   const p = D.products.find(x => x.id === pid); if (!p) return; S.sheet = { type: 'product', pid };
   const lz = isLiso(p), hasL = !lz && D.products.some(isLiso), use = lz ? lisoUse() : null;
-  const vs = p.variants.map(v => { const l = hasL ? lisoOf(p, v) : null; return '<button class="row" data-act="editVariant" data-vid="' + v.id + '"><div class="mid"><div class="t1">' + esc(v.label || 'Única') + '</div><div class="t2">' + esc(v.sku || 'sem SKU') + ' ' + pill(stockState(v)) + (lz ? ' · estampadas: ' + (use.get(v.id) || 0) : hasL ? ' · ' + (l ? 'liso: ' + esc(lisoName(l)) : v.bvid === 'none' ? 'sem liso' : '<span class="warnt">liso não encontrado</span>') : '') + '</div></div><span class="amt">' + brl(v.price || 0) + '<small>' + (v.stock || 0) + ' un.</small></span></button>'; }).join('');
+  const vs = p.variants.map(v => { const l = hasL ? lisoOf(p, v) : null; return '<button class="row" data-act="editVariant" data-vid="' + v.id + '"><div class="mid"><div class="t1">' + esc(v.label || 'Única') + '</div><div class="t2">' + esc(v.sku || 'sem SKU') + ' ' + pill(stockState(v)) + (lz ? ' · estampadas: ' + (use.get(v.id) || 0) : hasL ? ' · ' + (l ? 'liso: ' + esc(lisoName(l)) : v.bvid === 'none' ? 'sem liso' : '<span class="warnt">liso não encontrado</span>') : '') + '</div></div><span class="amt">' + (lz ? '<span data-need="costs">' + brl(v.cost || 0) + '</span>' : brl(v.price || 0)) + '<small>' + (v.stock || 0) + ' un.</small></span></button>'; }).join('');
   sheetWrap((lz ? 'Liso · ' : '') + p.name, plural(p.variants.length, 'variação', 'variações') + ' · ' + plural(totalStock(p), 'peça', 'peças'),
     fld('Nome do produto', 'p-name', '<input id="p-name" maxlength="80" autocomplete="off" value="' + esc(p.name) + '">') + catField(p.cat || '') +
     '<div class="sect" style="margin-top:4px">Variações</div>' + (vs ? '<div class="list" style="margin:0 0 12px">' + vs + '</div>' : '<p class="foot">Nenhuma variação. Adicione abaixo.</p>'),
-    '<button class="btn" data-act="newVariant">Nova variação</button><button class="btn" data-act="batch">Gerar variações em lote</button><button class="btn btn-primary" data-act="saveProduct">Salvar</button>' + armBtn('delProduct', 'Apagar produto') + '<button class="btn" data-act="close">Fechar</button>');
+    (lz ? '<button class="btn" data-act="addLisoVars">Adicionar variações</button>' : '<button class="btn" data-act="newVariant">Nova variação</button><button class="btn" data-act="batch">Gerar variações em lote</button>') + '<button class="btn btn-primary" data-act="saveProduct">Salvar</button>' + armBtn('delProduct', 'Apagar produto') + '<button class="btn" data-act="close">Fechar</button>');
 }
 function saveProductFields() {
   const sh = S.sheet; if (!sh || !$('p-name')) return true; const p = D.products.find(x => x.id === sh.pid); if (!p) return true;
@@ -1348,7 +1401,7 @@ function openVariant(pid, vid, sku, pre, resume) {
   sheetWrap(v ? 'Editar variação' : 'Nova variação', esc(p.name),
     fld('Variação (ex.: Preto / 36)', 'v-label', '<input id="v-label" maxlength="60" autocomplete="off" value="' + esc(v ? v.label : pv('label')) + '">', sib ? 'Já cadastradas: ' + esc(p.variants.slice(0, 12).map(x => x.label || 'Única').join(', ')) + (p.variants.length > 12 ? '…' : '') : '') +
     fld('SKU', 'v-sku', '<div class="inrow"><input id="v-sku" maxlength="60" autocomplete="off" autocapitalize="characters" value="' + esc(v ? v.sku : sku || '') + '"><button class="btn" data-act="scanSku" aria-label="Ler SKU pelo QR Code">' + IC.cam + '</button></div>', 'É o código que está no QR Code da etiqueta.') + '<div id="skunote"></div>' +
-    '<div class="two">' + fld('Preço de venda', 'v-price', moneyIn('v-price', v ? (v.price ? fmtIn(v.price) : '') : pv('price') || (sib && sib.price ? fmtIn(sib.price) : ''))) + fld('Custo (opcional)', 'v-cost', moneyIn('v-cost', v ? (v.cost ? fmtIn(v.cost) : '') : pv('cost') || (sib && sib.cost ? fmtIn(sib.cost) : ''))).replace('class="field"', 'class="field" data-need="costs"') + '</div>' +
+    '<div class="two">' + (isLiso(p) ? '' : fld('Preço de venda', 'v-price', moneyIn('v-price', v ? (v.price ? fmtIn(v.price) : '') : pv('price') || (sib && sib.price ? fmtIn(sib.price) : '')))) + fld(isLiso(p) ? 'Custo por peça' : 'Custo (opcional)', 'v-cost', moneyIn('v-cost', v ? (v.cost ? fmtIn(v.cost) : '') : pv('cost') || (sib && sib.cost ? fmtIn(sib.cost) : ''))).replace('class="field"', 'class="field" data-need="costs"') + '</div>' +
     '<div class="two">' + (v ? '<div class="field"><label>Estoque atual</label><div class="t1" style="padding:10px 0">' + (v.stock || 0) + ' un.</div></div>' : fld('Estoque inicial', 'v-stock', numIn('v-stock', pv('stock')))) + fld('Estoque mínimo', 'v-min', numIn('v-min', v ? (v.min || '') : pv('min') || (sib && sib.min ? sib.min : ''), 'Opcional')) + '</div>' + lisoField(p, v),
     '<button class="btn btn-primary" data-act="saveVariant">Salvar variação</button>' + (v ? '<button class="btn" data-act="adjustFromV" data-vid="' + v.id + '">Ajustar estoque</button>' + armBtn('delVariant', 'Apagar variação') : '') + '<button class="btn" data-act="backProduct">Voltar ao produto</button>');
   updSkuNote();
@@ -1380,7 +1433,7 @@ function openBatch(pid) {
     fld('Prefixo do SKU', 'b-pre', '<input id="b-pre" maxlength="20" autocapitalize="characters" autocomplete="off" value="' + esc(pre) + '">', 'O SKU fica assim: PREFIXO-PRETO-36. Você pode editar cada SKU depois para igualar ao QR Code já impresso.') +
     '<div class="two">' + fld('Grupo 1 (ex.: Cor)', 'b-g1', '<input id="b-g1" maxlength="30" autocomplete="off" placeholder="Cor">') + fld('Valores', 'b-v1', '<input id="b-v1" autocomplete="off" placeholder="Preto, Rosa, Nude">') + '</div>' +
     '<div class="two">' + fld('Grupo 2 (ex.: Tamanho)', 'b-g2', '<input id="b-g2" maxlength="30" autocomplete="off" placeholder="Tamanho">') + fld('Valores', 'b-v2', '<input id="b-v2" autocomplete="off" placeholder="34, 35, 36, 37">') + '</div>' +
-    '<p class="foot" id="b-count" style="margin:0 0 12px"></p><div class="two">' + fld('Preço de venda', 'b-price', moneyIn('b-price', '')) + fld('Custo (opcional)', 'b-cost', moneyIn('b-cost', '')).replace('class="field"', 'class="field" data-need="costs"') + '</div><div class="two">' + fld('Estoque de cada uma', 'b-stock', numIn('b-stock', '')) + fld('Estoque mínimo', 'b-min', numIn('b-min', '', 'Opcional')) + '</div>',
+    '<p class="foot" id="b-count" style="margin:0 0 12px"></p><div class="two">' + (isLiso(p) ? '' : fld('Preço de venda', 'b-price', moneyIn('b-price', ''))) + fld('Custo (opcional)', 'b-cost', moneyIn('b-cost', '')).replace('class="field"', 'class="field" data-need="costs"') + '</div><div class="two">' + fld('Estoque de cada uma', 'b-stock', numIn('b-stock', '')) + fld('Estoque mínimo', 'b-min', numIn('b-min', '', 'Opcional')) + '</div>',
     '<button class="btn btn-primary" data-act="saveBatch">Gerar variações</button><button class="btn" data-act="backProduct">Voltar ao produto</button>');
 }
 function batchCombos() {
@@ -1425,6 +1478,7 @@ function saveAdjust() {
   const delta = sh.mode === 'in' ? q : sh.mode === 'out' ? -q : q - (v.stock || 0);
   if (delta === 0) { toast('O estoque já está em ' + (isIns(h.p) ? fmtQ(h.p, v.stock) : (v.stock || 0)) + '.'); return; }
   const lz = sh.mode === 'in' && $('a-liso') && $('a-liso').checked ? lisoOf(h.p, v) : null;
+  if (lz) costFromLiso(v, delta, lz);
   moveStock(v, delta, sh.mode === 'in' ? 'entrada' : sh.mode === 'out' ? 'saida' : 'contagem', note + (lz ? (note ? ' · ' : '') + 'do liso' : ''), '');
   if (lz) moveStock(lz.v, -delta, 'estampa', 'Entrada de ' + vname(h.p, v), ''); save(); render();
   if (sh.back) openProduct(h.p.id); else closeSheet(); toast('Estoque agora: ' + (isIns(h.p) ? fmtQ(h.p, v.stock) : v.stock) + '.');
@@ -1500,7 +1554,7 @@ function onCode(raw) {
   const v = h.v, nm = esc(vname(h.p, v));
   if (sc.mode === 'sale' && !isPronto(h.p)) { beep(false); setMsg('Peça lisa não é vendida no caixa<small>' + nm + '</small>', true); return; }
   if (sc.mode === 'sale') { const q = addCart(v.id, 1); sc.undo.push(v.id); beep(true); renderBar(); setMsg('✓ ' + nm + '<small>' + brl(v.price || 0) + ' · ' + q + ' no carrinho' + (q > (v.stock || 0) ? ' · <b>estoque do sistema: ' + (v.stock || 0) + '</b>' : '') + '</small>'); }
-  else if (sc.mode === 'in') { const l = S.inLiso !== false ? lisoOf(h.p, v) : null; moveStock(v, 1, 'entrada', 'Entrada por QR' + (l ? ' · do liso' : ''), ''); if (l) moveStock(l.v, -1, 'estampa', 'Entrada de ' + vname(h.p, v), ''); save(); sc.undo.push(v.id); sc.undoL.push(l ? l.v.id : ''); sc.ins++; beep(true);
+  else if (sc.mode === 'in') { const l = S.inLiso !== false ? lisoOf(h.p, v) : null; costFromLiso(v, 1, l); moveStock(v, 1, 'entrada', 'Entrada por QR' + (l ? ' · do liso' : ''), ''); if (l) moveStock(l.v, -1, 'estampa', 'Entrada de ' + vname(h.p, v), ''); save(); sc.undo.push(v.id); sc.undoL.push(l ? l.v.id : ''); sc.ins++; beep(true);
     setMsg('✓ ' + nm + '<small>estoque agora: ' + v.stock + (l ? ' · liso ' + esc(lisoName(l)) + ': ' + l.v.stock : S.inLiso !== false && D.products.some(isLiso) ? ' · <b>sem liso ligado</b>' : '') + '</small>'); }
   else if (sc.mode === 'count') { S.count[v.id] = (S.count[v.id] || 0) + 1; beep(true); setMsg('✓ ' + nm + '<small>contados: ' + S.count[v.id] + ' · sistema: ' + (v.stock || 0) + '</small>'); }
 }
@@ -1623,7 +1677,10 @@ document.addEventListener('click', ev => {
     case 'home': S.mode = ''; S.lim = 60; render(); window.scrollTo(0, 0); break;
     case 'goconfig': S.mode = 'pdv'; S.tab = 'mais'; render(); window.scrollTo(0, 0); break;
     case 'ek': S.ek = ds.v; S.lim = 60; render(); break;
-    case 'newLiso': openNewProduct('', 'liso'); break;
+    case 'newLiso': openNewLiso(); break;
+    case 'saveNewLiso': saveNewLiso(); break;
+    case 'addLisoVars': openNewLiso(S.sheet.pid); break;
+    case 'savePrintCost': { const c = parseMoney(val('pc-val')); D.store.printCost = c; save(); render(); toast('Custo da estampa: ' + brl(c) + ' por peça.'); break; }
     case 'buyIns': openBuyIns(ds.id || ''); break;
     case 'buyInsSave': saveBuyIns(); break;
     case 'editIns': openIns(ds.id); break;
@@ -1732,6 +1789,7 @@ document.addEventListener('input', ev => {
   else if (t.id === 'vq') refreshPick();
   else if (t.id === 'v-sku') updSkuNote();
   else if (t.id === 'pq') renderPrintRes();
+  else if (t.id === 'nl-vars' || t.id === 'nl-cores' || t.id === 'nl-tams') updNewLiso();
   else if (t.id === 'i-qty' || t.id === 'i-tot') updBuyIns();
   else if (t.id === 'bq') renderBuyRes();
   else if (t.dataset.bqq || t.dataset.bqc) { const sh = S.sheet, ln = sh && sh.lines && sh.lines.find(x => x.vid === (t.dataset.bqq || t.dataset.bqc)); if (ln) { if (t.dataset.bqq) { const n = toInt(t.value); ln.qty = isNaN(n) || n < 0 ? 0 : n; } else ln.cost = t.value; updBuySum(); } }
@@ -1781,6 +1839,7 @@ const roleLabel = r => ROLES[r] ? ROLES[r].label : r === 'pendente' ? 'Aguardand
 const permsOf = r => { const o = {}; PERM_LIST.forEach(k => { o[k] = !!(ROLES[r] && ROLES[r].perms.indexOf(k) >= 0); }); return o; };
 const can = k => !hasCfg() || (!!CL.me && CL.me.active === true && !!(CL.me.perms && CL.me.perms[k]));
 const ACTPERM = {
+  saveNewLiso: 'products', addLisoVars: 'products', savePrintCost: 'config',
   buyIns: 'stock', buyInsSave: 'stock', editIns: 'products', insSave: 'products', delIns: 'products', buyLiso: 'stock', buyAdd: 'stock', buyLisoSave: 'stock', lotNew: 'stock', lotMode: 'stock', lotSave: 'stock', lotCancel: 'stock',
   newLiso: 'products',
   print: 'stock', printAdd: 'stock', pinc: 'stock', pdec: 'stock', printSave: 'stock', siteNew: 'stock', siteAdd: 'stock', sinc: 'stock', sdec: 'stock', siteSrc: 'stock', siteSave: 'stock', siteCancel: 'stock',
@@ -1815,7 +1874,7 @@ function stable(o) {
 const sigOf = o => h32(stable(o));
 const clone = o => JSON.parse(JSON.stringify(o));
 const prodDoc = p => { const d = clone(p); d.variants = (d.variants || []).map(v => { delete v.stock; return v; }); return d; };
-const storeDoc = () => clone({ name: D.store.name || '', footer: D.store.footer || '', fees: D.store.fees || {}, cats: D.store.cats || [], events: D.store.events || [], curEv: D.store.curEv || '', evDay: D.store.evDay || '' });
+const storeDoc = () => clone({ name: D.store.name || '', footer: D.store.footer || '', fees: D.store.fees || {}, cats: D.store.cats || [], events: D.store.events || [], curEv: D.store.curEv || '', evDay: D.store.evDay || '', printCost: printCost() });
 const hasCfg = () => !!(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.PDVCloud);
 const cloudOn = () => CL.on && !!CL.user;
 function cloudPersist() { if (!CL.uid) return; lsSet('pdv:sig:' + SK, JSON.stringify(CL.sig)); lsSet('pdv:smap:' + SK, JSON.stringify(CL.stockMap)); }
@@ -1983,7 +2042,7 @@ function remoteMove(id, x) {
 }
 function remoteStore(x) {
   if (CL.sig.st && CL.sig.st !== sigOf(storeDoc())) return false;
-  D.store.name = x.name || ''; D.store.footer = x.footer || ''; D.store.fees = x.fees || {}; if (Array.isArray(x.cats)) D.store.cats = x.cats.filter(c => typeof c === 'string' && c.trim()); if (Array.isArray(x.events)) D.store.events = x.events.filter(e => e && e.id && e.name); D.store.curEv = x.curEv || ''; D.store.evDay = x.evDay || ''; CL.sig.st = sigOf(storeDoc()); return true;
+  D.store.name = x.name || ''; D.store.footer = x.footer || ''; D.store.fees = x.fees || {}; if (Array.isArray(x.cats)) D.store.cats = x.cats.filter(c => typeof c === 'string' && c.trim()); if (Array.isArray(x.events)) D.store.events = x.events.filter(e => e && e.id && e.name); D.store.curEv = x.curEv || ''; D.store.evDay = x.evDay || ''; if (x.printCost != null) D.store.printCost = x.printCost; CL.sig.st = sigOf(storeDoc()); return true;
 }
 function cloudPush() {
   if (!cloudOn() || !CL.ready) return;
