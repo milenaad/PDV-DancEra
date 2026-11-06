@@ -797,23 +797,41 @@ const siteOk = r => !r.canc;
 const sitePcs = r => (r.lines || []).reduce((a, l) => a + (l.qty || 0), 0);
 function vendasSite() {
   const test = periodTest(), all = D.site.filter(r => test(r.ts)).sort((a, b) => b.ts - a.ts), ok = all.filter(siteOk);
-  const pcs = ok.reduce((a, r) => a + sitePcs(r), 0), fromL = ok.reduce((a, r) => a + r.lines.filter(l => l.src === 'liso').reduce((x, l) => x + l.qty, 0), 0), val = ok.reduce((a, r) => a + (r.val || 0), 0);
+  const pcs = ok.reduce((a, r) => a + sitePcs(r), 0), fromL = ok.reduce((a, r) => a + r.lines.filter(l => l.src === 'liso').reduce((x, l) => x + l.qty, 0), 0), val = ok.reduce((a, r) => a + (r.val || 0), 0), sum = k => ok.reduce((a, r) => a + (r[k] || 0), 0), fees = sum('fee') + sum('jur'), fre = sum('frete');
   let h = '<div class="pbar" style="margin-top:6px"><button class="btn btn-primary" data-act="siteNew">Lançar venda do site</button></div>' +
     '<div class="pbar"><div class="chips" role="group" aria-label="Período">' + [['hoje', 'Hoje'], ['7d', '7 dias'], ['mes', 'Este mês'], ['tudo', 'Tudo']].map(p => '<button class="chip" data-act="period" data-v="' + p[0] + '" aria-pressed="' + (S.period === p[0]) + '">' + p[1] + '</button>').join('') + '</div></div>' +
     '<div class="kpis big"><div><span class="k">Pedidos</span><span class="kv">' + ok.length + '</span></div><div><span class="k">Peças</span><span class="kv">' + pcs + '</span></div></div>' +
     '<div class="kpis"><div><span class="k">Saíram do liso</span><span class="kv">' + fromL + '</span></div><div><span class="k">Saíram do pronto</span><span class="kv">' + (pcs - fromL) + '</span></div></div>' +
-    (val ? '<div class="kpis"><div><span class="k">Valor dos pedidos</span><span class="kv">' + brl(val) + '</span></div><div><span class="k">Ticket médio</span><span class="kv">' + brl(Math.round(val / Math.max(1, ok.filter(r => r.val).length))) + '</span></div></div>' : '');
+    (val ? (() => { const recv = val - fees - fre, cost = ok.reduce((a, r) => a + siteCostOf(r), 0), pack = sum('pack'), net = recv - cost - pack;
+      return '<div class="kpis"><div><span class="k">Valor dos pedidos (bruto)</span><span class="kv">' + brl(val) + '</span></div><div><span class="k">Ticket médio</span><span class="kv">' + brl(Math.round(val / Math.max(1, ok.filter(r => r.val).length))) + '</span></div></div>' +
+        '<div class="kpis"><div><span class="k">Taxas e juros</span><span class="kv">' + brl(fees) + '</span></div><div><span class="k">Frete pago</span><span class="kv">' + brl(fre) + '</span></div></div>' +
+        '<div class="kpis"><div><span class="k">Recebido (bruto − taxas − juros − frete)</span><span class="kv">' + brl(recv) + '</span></div><div data-need="costs"><span class="k">Custo dos produtos</span><span class="kv">' + brl(cost) + '</span></div></div>' +
+        '<div class="kpis"><div><span class="k">Embalagem</span><span class="kv">' + brl(pack) + '</span></div><div></div></div>' +
+        '<div class="kpis big" data-need="costs"><div><span class="k">Líquido final (recebido − produtos − embalagem)</span><span class="kv">' + brl(net) + '</span></div><div><span class="k">Margem</span><span class="kv">' + (val > 0 ? (net / val * 100).toFixed(1).replace('.', ',') + '%' : '—') + '</span></div></div>'; })() : '');
   const use = new Map(); ok.forEach(r => r.lines.forEach(l => { if (l.src !== 'liso') return; const k = l.sname || 'Liso'; use.set(k, (use.get(k) || 0) + l.qty); }));
   if (use.size) { const U = Array.from(use.entries()).sort((a, b) => b[1] - a[1]), mx = U[0][1] || 1; h += '<section class="card"><h2>Lisos usados</h2><p class="hint">Quantas peças lisas as vendas do site consumiram no período.</p>' + U.slice(0, 12).map(u => '<div class="brow"><div class="tp"><span style="min-width:0;overflow-wrap:anywhere">' + esc(u[0]) + '</span><span class="vl">' + u[1] + ' un.</span></div><div class="track"><div class="fill" style="width:' + Math.max(2, Math.round(u[1] / mx * 100)) + '%"></div></div></div>').join('') + '</section>'; }
   if (!all.length) return h + '<div class="empty"><p>Nenhuma venda do site neste período.</p></div>';
-  h += '<div class="sect">Pedidos do site</div><div class="list">' + all.slice(0, S.lim).map(r => '<button class="row" data-act="siteView" data-id="' + r.id + '"><div class="mid"><div class="t1">' + (r.ord ? 'Pedido ' + esc(r.ord) : 'Venda do site nº ' + r.sn) + (r.canc ? ' <span class="pill crit">Cancelada</span>' : '') + '</div><div class="t2">' + fmtDate(r.ts) + ' · ' + plural(sitePcs(r), 'peça', 'peças') + (r.cust ? ' · ' + esc(r.cust) : '') + '</div></div><span class="amt">' + (r.val ? brl(r.val) : '') + '</span></button>').join('') + '</div>' + moreBtn(all.length, Math.min(all.length, S.lim));
+  h += '<div class="sect">Pedidos do site</div><div class="list">' + all.slice(0, S.lim).map(r => '<button class="row" data-act="siteView" data-id="' + r.id + '"><div class="mid"><div class="t1">' + (r.ord ? 'Pedido ' + esc(r.ord) : 'Venda do site nº ' + r.sn) + (r.canc ? ' <span class="pill crit">Cancelada</span>' : '') + '</div><div class="t2">' + fmtDate(r.ts) + ' · ' + plural(sitePcs(r), 'peça', 'peças') + (r.cust ? ' · ' + esc(r.cust) : '') + '</div></div><span class="amt">' + (r.val ? (can('costs') ? brl(siteNet(r)) + '<small>líquido</small>' : brl(siteRecv(r)) + '<small>recebido</small>') : '') + '</span></button>').join('') + '</div>' + moreBtn(all.length, Math.min(all.length, S.lim));
   return h;
+}
+const SITE_PACK = 300;
+/* custo de cada item da venda do site: do pronto = custo do pronto; do liso = custo do liso + estampa */
+function siteUnitCost(s) { return s ? (s.v.cost || 0) + (isLiso(s.p) ? printCost() : 0) : 0; }
+const siteRecv = r => (r.val || 0) - (r.fee || 0) - (r.jur || 0) - (r.frete || 0);
+function siteCostOf(r) { if (r.cost != null) return r.cost; const I = index(); return (r.lines || []).reduce((a, l) => { const s = I.byId.get(l.svid); return a + l.qty * (l.cost != null ? l.cost : siteUnitCost(s)); }, 0); }
+const siteNet = r => siteRecv(r) - siteCostOf(r) - (r.pack || 0);
+function updSiteNet() {
+  const el = $('s-net'), sh = S.sheet; if (!el || !sh || sh.type !== 'site') return;
+  const v = parseMoney(val('s-val')), recv = v - parseMoney(val('s-fee')) - parseMoney(val('s-jur')) - parseMoney(val('s-frete')), pack = parseMoney(val('s-pack'));
+  const cost = sh.lines.reduce((a, ln) => a + ln.qty * siteUnitCost(siteSrcOf(ln)), 0);
+  el.innerHTML = v ? '<section class="card" style="margin:0;padding:10px 14px"><div class="totline"><span>Recebido (valor − taxas − juros − frete)</span><strong>' + brl(recv) + '</strong></div><div class="totline" data-need="costs"><span>Custo dos produtos</span><span>− ' + brl(cost) + '</span></div><div class="totline"><span>Embalagem</span><span>− ' + brl(pack) + '</span></div><div class="totline" data-need="costs"><strong>Líquido</strong><strong>' + brl(recv - cost - pack) + '</strong></div></section>' : '';
 }
 function openSite() {
   S.sheet = { type: 'site', lines: [] };
   sheetWrap('Venda do site', 'Dá baixa no liso (vai estampar) ou no pronto',
-    '<div class="two">' + fld('Data', 's-date', '<input id="s-date" type="date" value="' + dayKey(Date.now()) + '">') + fld('Nº do pedido', 's-ord', '<input id="s-ord" maxlength="30" autocomplete="off" placeholder="Opcional">') + '</div>' +
-    '<div class="two">' + fld('Cliente', 's-cust', '<input id="s-cust" maxlength="60" autocomplete="off" placeholder="Opcional">') + fld('Valor do pedido', 's-val', moneyIn('s-val', '')) + '</div>' +
+    '<div class="two">' + fld('Data', 's-date', '<input id="s-date" type="date" value="' + dayKey(Date.now()) + '">') + fld('Valor do pedido', 's-val', moneyIn('s-val', '')) + '</div>' +
+    '<div class="two">' + fld('Taxas', 's-fee', moneyIn('s-fee', '')) + fld('Juros', 's-jur', moneyIn('s-jur', '')) + '</div>' +
+    '<div class="two">' + fld('Frete (pago por você)', 's-frete', moneyIn('s-frete', '')) + fld('Embalagem', 's-pack', moneyIn('s-pack', fmtIn(SITE_PACK))) + '</div><div id="s-net" style="margin:-4px 0 12px"></div>' +
     '<div class="field"><label for="wq">Itens do pedido</label><input id="wq" type="text" inputmode="search" autocomplete="off" placeholder="Buscar estampa, liso, cor, tamanho ou SKU"></div><div id="wres"></div><div id="wlines"></div>',
     '<button class="btn btn-primary" data-act="siteSave">Salvar venda do site</button><button class="btn" data-act="close">Cancelar</button>');
   renderSiteRes(); renderSiteLines();
@@ -833,7 +851,7 @@ function renderSiteLines() {
     const seg = liso ? '<input data-west="' + ln.k + '" maxlength="60" autocomplete="off" placeholder="Estampa (opcional)" value="' + esc(ln.est || '') + '" style="margin-top:6px">' :
       l ? '<div class="seg" role="group" aria-label="De onde sai" style="margin-top:6px"><button data-act="siteSrc" data-k="' + ln.k + '" data-v="liso" aria-pressed="' + (ln.src === 'liso') + '">Do liso</button><button data-act="siteSrc" data-k="' + ln.k + '" data-v="pronto" aria-pressed="' + (ln.src !== 'liso') + '">Do pronto</button></div>' : '<div class="t2">Sai do pronto (sem peça lisa ligada)</div>';
     const st = s ? (s.v.stock || 0) : 0;
-    return '<div class="row" style="flex-wrap:wrap"><div class="mid" style="flex:1 1 60%"><div class="t1">' + esc(vname(x.p, x.v)) + '</div><div class="t2">' + (s ? 'baixa em: ' + esc(vname(s.p, s.v)) + ' · tem ' + st + (ln.qty > st ? ' <span class="warnt">· vai ficar negativo</span>' : '') : '') + '</div>' + seg + '</div><div class="stepper"><button data-act="sdec" data-k="' + ln.k + '" aria-label="Menos uma">−</button><span>' + ln.qty + '</span><button data-act="sinc" data-k="' + ln.k + '" aria-label="Mais uma">+</button></div></div>'; }).join('') + '</div>';
+    return '<div class="row" style="flex-wrap:wrap"><div class="mid" style="flex:1 1 60%"><div class="t1">' + esc(vname(x.p, x.v)) + '</div><div class="t2">' + (s ? 'baixa em: ' + esc(vname(s.p, s.v)) + ' · tem ' + st + (ln.qty > st ? ' <span class="warnt">· vai ficar negativo</span>' : '') : '') + '</div>' + seg + '</div><div class="stepper"><button data-act="sdec" data-k="' + ln.k + '" aria-label="Menos uma">−</button><span>' + ln.qty + '</span><button data-act="sinc" data-k="' + ln.k + '" aria-label="Mais uma">+</button></div></div>'; }).join('') + '</div>'; updSiteNet();
 }
 function siteAdd(vid) {
   const sh = S.sheet; if (!sh || sh.type !== 'site') return; const x = index().byId.get(vid); if (!x) return;
@@ -847,17 +865,19 @@ function siteSave() {
   const sh = S.sheet; if (!sh || sh.type !== 'site') return; const L = sh.lines.filter(x => x.qty > 0); if (!L.length) { toast('Adicione pelo menos um item.'); return; }
   const I = index(), ds = val('s-date'), now = new Date(); let ts = Date.now();
   if (/^\d{4}-\d{2}-\d{2}$/.test(ds)) { const [y, m, d] = ds.split('-').map(Number); ts = new Date(y, m - 1, d, now.getHours(), now.getMinutes()).getTime(); }
-  const id = uid(), ord = val('s-ord').trim(), rec = { id, ch: 'site', status: 'site', items: [], sn: D.site.reduce((a, r) => Math.max(a, r.sn || 0), 0) + 1, ts, ord, cust: val('s-cust').trim(), val: parseMoney(val('s-val')), lines: [] };
+  const id = uid(), ord = '', fee = parseMoney(val('s-fee')), jur = parseMoney(val('s-jur')), frete = parseMoney(val('s-frete')), vv = parseMoney(val('s-val')), rec = { id, ch: 'site', status: 'site', items: [], sn: D.site.reduce((a, r) => Math.max(a, r.sn || 0), 0) + 1, ts, ord, cust: '', val: vv, fee, jur, frete, pack: parseMoney(val('s-pack')), cost: 0, lines: [] };
   for (const ln of L) { const x = I.byId.get(ln.vid), s = siteSrcOf(ln); if (!x || !s) { toast('Escolha de onde sai: ' + (x ? vname(x.p, x.v) : 'item') + '.'); return; } }
   L.forEach(ln => { const x = I.byId.get(ln.vid), s = siteSrcOf(ln), src = isLiso(s.p) ? 'liso' : 'pronto';
     moveStock(s.v, -ln.qty, 'site', (ord ? 'Pedido ' + ord : 'Venda do site') + (src === 'liso' && !isLiso(x.p) ? ' · ' + vname(x.p, x.v) : ln.est ? ' · ' + ln.est : ''), id);
-    rec.lines.push({ vid: ln.vid, svid: s.v.id, src, qty: ln.qty, name: x.p.name, label: x.v.label || '', sku: x.v.sku || '', sname: vname(s.p, s.v), est: (ln.est || '').trim() }); });
-  D.site.push(rec); save(); closeSheet(); render(); toast('Venda do site salva · ' + plural(sitePcs(rec), 'peça baixada', 'peças baixadas') + '.');
+    const uc = siteUnitCost(s); rec.cost += uc * ln.qty;
+    rec.lines.push({ cost: uc, vid: ln.vid, svid: s.v.id, src, qty: ln.qty, name: x.p.name, label: x.v.label || '', sku: x.v.sku || '', sname: vname(s.p, s.v), est: (ln.est || '').trim() }); });
+  rec.net = siteNet(rec); D.site.push(rec); save(); closeSheet(); render(); toast('Venda do site salva · ' + plural(sitePcs(rec), 'peça baixada', 'peças baixadas') + '.');
 }
 function openSiteView(id) {
   const r = D.site.find(x => x.id === id); if (!r) return; S.sheet = { type: 'siteview', id };
-  sheetWrap(r.ord ? 'Pedido ' + r.ord : 'Venda do site nº ' + r.sn, fmtDate(r.ts) + (r.cust ? ' · ' + esc(r.cust) : '') + (r.val ? ' · ' + brl(r.val) : '') + (r.canc ? ' · CANCELADA' : ''),
-    '<div class="list" style="margin-top:0">' + r.lines.map(l => '<div class="row"><div class="mid"><div class="t1">' + l.qty + 'x ' + esc(l.name) + (l.label ? ' · ' + esc(l.label) : '') + '</div><div class="t2">' + (l.src === 'liso' ? 'do liso: ' : 'do pronto: ') + esc(l.sname || '') + (l.est ? ' · estampa ' + esc(l.est) : '') + '</div></div></div>').join('') + '</div>',
+  const money = r.val ? '<section class="card" style="margin:0 0 12px;padding:12px 14px"><div class="totline"><span>Valor do pedido</span><span>' + brl(r.val) + '</span></div>' + (r.fee ? '<div class="totline"><span>Taxas</span><span>− ' + brl(r.fee) + '</span></div>' : '') + (r.jur ? '<div class="totline"><span>Juros</span><span>− ' + brl(r.jur) + '</span></div>' : '') + (r.frete ? '<div class="totline"><span>Frete</span><span>− ' + brl(r.frete) + '</span></div>' : '') + '<div class="totline"><strong>Recebido</strong><strong>' + brl(siteRecv(r)) + '</strong></div><div class="totline" data-need="costs"><span>Custo dos produtos</span><span>− ' + brl(siteCostOf(r)) + '</span></div>' + (r.pack ? '<div class="totline"><span>Embalagem</span><span>− ' + brl(r.pack) + '</span></div>' : '') + '<div class="totline" data-need="costs"><strong>Líquido final</strong><strong>' + brl(siteNet(r)) + '</strong></div></section>' : '';
+  sheetWrap(r.ord ? 'Pedido ' + r.ord : 'Venda do site nº ' + r.sn, fmtDate(r.ts) + (r.cust ? ' · ' + esc(r.cust) : '') + (r.canc ? ' · CANCELADA' : ''),
+    money + '<div class="list" style="margin-top:0">' + r.lines.map(l => '<div class="row"><div class="mid"><div class="t1">' + l.qty + 'x ' + esc(l.name) + (l.label ? ' · ' + esc(l.label) : '') + '</div><div class="t2">' + (l.src === 'liso' ? 'do liso: ' : 'do pronto: ') + esc(l.sname || '') + (l.est ? ' · estampa ' + esc(l.est) : '') + '</div></div></div>').join('') + '</div>',
     (!r.canc ? armBtn('siteCancel', 'Cancelar e devolver ao estoque') : '') + '<button class="btn" data-act="close">Fechar</button>');
 }
 function siteCancel() {
@@ -1798,6 +1818,7 @@ document.addEventListener('input', ev => {
   else if (t.dataset.lq) { const sh = S.sheet; if (sh && sh.type === 'lot') { const n = toInt(t.value); sh.out[t.dataset.lq] = isNaN(n) || n < 0 ? 0 : n; updLot(); } }
   else if (t.id === 'l-labor' || t.id === 'l-other') updLot();
   else if (t.id === 'wq') renderSiteRes();
+  else if (/^s-(val|fee|jur|frete|pack)$/.test(t.id)) updSiteNet();
   else if (t.dataset.pl) { const sh = S.sheet, ln = sh && sh.lines && sh.lines.find(x => x.vid === t.dataset.pl), n = toInt(t.value); if (ln && !isNaN(n) && n >= 0) ln.qty = n; }
   else if (t.dataset.west) { const sh = S.sheet, ln = sh && sh.lines && sh.lines.find(x => x.k === t.dataset.west); if (ln) ln.est = t.value; }
   else if (t.id === 'b-v1' || t.id === 'b-v2') updateBatchCount();
